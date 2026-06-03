@@ -1,4 +1,4 @@
-FROM python:3.12-slim
+FROM python:3.14-slim
 
 ARG SOURCE_COMMIT=unknown
 LABEL org.opencontainers.image.revision=${SOURCE_COMMIT}
