@@ -17,6 +17,20 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s %(name)s %(message)s",
 )
 
+
+class _SuppressHealthAccessLog(logging.Filter):
+    """Drop uvicorn access-log lines for the /health probe (Coolify hits it
+    every few seconds and drowns out real requests)."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        args = record.args
+        if isinstance(args, tuple) and len(args) >= 3:
+            return str(args[2]) != "/health"
+        return True
+
+
+logging.getLogger("uvicorn.access").addFilter(_SuppressHealthAccessLog())
+
 if auth.oauth_enabled():
     # OAuth mode: a signed session cookie is mandatory; Basic password is not used.
     if not os.environ.get("SESSION_SECRET"):
