@@ -139,6 +139,32 @@ def _to_markdown(text: str) -> str:
     return re.sub(r"<[^>]+>", "", text)
 
 
+_RETRY_ATTEMPTS = max(1, int(os.environ.get("NOTIFY_RETRY_ATTEMPTS", "3")))
+
+
+async def _retry_send(label: str, factory) -> bool:
+    """Call an async send factory up to _RETRY_ATTEMPTS times with exponential
+    backoff. On exhaustion, log an ERROR so dropped notifications are findable."""
+    for attempt in range(1, _RETRY_ATTEMPTS + 1):
+        try:
+            if await factory():
+                if attempt > 1:
+                    logger.info("notify recovered on attempt %d/%d: %s", attempt, _RETRY_ATTEMPTS, label)
+                return True
+            logger.warning("notify attempt %d/%d failed: %s", attempt, _RETRY_ATTEMPTS, label)
+        except Exception as exc:
+            logger.warning("notify attempt %d/%d errored (%s): %s", attempt, _RETRY_ATTEMPTS, exc, label)
+        if attempt < _RETRY_ATTEMPTS:
+            await asyncio.sleep(min(2 ** (attempt - 1), 10))
+    logger.error("notify DROPPED after %d attempts: %s", _RETRY_ATTEMPTS, label)
+    return False
+
+
+def _dest_target(dest) -> str:
+    return (dest.telegram_chat_label or dest.telegram_chat_id or dest.ntfy_topic
+            or dest.mattermost_target or dest.email_to or "-")
+
+
 async def _dispatch(project: Project, payload: dict, db: Session) -> list[dict]:
     title, body = _format_message(payload)
     is_err = _is_error(payload)
@@ -151,45 +177,52 @@ async def _dispatch(project: Project, payload: dict, db: Session) -> list[dict]:
         if effective == FilterMode.errors_only and not is_err:
             logger.debug("project=%s dest=%s filter=errors_only — not an error, dropped", project.name, dest.id)
             return {"dest_id": dest.id, "type": dest.type, "ok": None, "skipped": True}
-        ok = False
         bot = dest.bot
+        factory = None
 
         if bot and dest.type == DestinationType.telegram:
             if bot.telegram_bot_token and dest.telegram_chat_id:
-                ok = await telegram.send(bot.telegram_bot_token, dest.telegram_chat_id, body)
+                factory = lambda: telegram.send(bot.telegram_bot_token, dest.telegram_chat_id, body)
         elif bot and dest.type == DestinationType.ntfy:
             if bot.ntfy_url and dest.ntfy_topic:
                 prio = dest.ntfy_priority or (4 if is_err else 3)
                 tags = ["rotating_light"] if is_err else ["white_check_mark"]
                 click = payload.get("application_url") or payload.get("url") or None
-                ok = await ntfy.send(
+                factory = lambda: ntfy.send(
                     bot.ntfy_url, dest.ntfy_topic, title, _to_markdown(body), bot.ntfy_token,
                     priority=prio, tags=tags, click=click, markdown=True,
                 )
         elif bot and dest.type == DestinationType.mattermost:
             if bot.mattermost_url and bot.mattermost_token and dest.mattermost_channel_id:
-                ok = await mattermost.send(
+                factory = lambda: mattermost.send(
                     bot.mattermost_url, bot.mattermost_token,
                     dest.mattermost_channel_id, _to_markdown(body),
                 )
         elif bot and dest.type == DestinationType.slack:
             if bot.slack_url:
-                ok = await slack.send(bot.slack_url, _to_markdown(body))
+                factory = lambda: slack.send(bot.slack_url, _to_markdown(body))
         elif bot and dest.type == DestinationType.discord:
             if bot.discord_url:
-                ok = await discord.send(bot.discord_url, _to_markdown(body))
+                factory = lambda: discord.send(bot.discord_url, _to_markdown(body))
         elif bot and dest.type == DestinationType.email:
             if bot.smtp_host and bot.smtp_from and dest.email_to:
-                ok = await email_notifier.send(
+                factory = lambda: email_notifier.send(
                     bot.smtp_host, bot.smtp_port, bot.smtp_user, bot.smtp_password,
                     bot.smtp_from, bot.smtp_use_tls, dest.email_to, title, _strip_html(body),
                 )
         # Legacy fallback: inline credentials on destination
         elif dest.type == DestinationType.telegram and dest.telegram_bot_token and dest.telegram_chat_id:
-            ok = await telegram.send(dest.telegram_bot_token, dest.telegram_chat_id, body)
+            factory = lambda: telegram.send(dest.telegram_bot_token, dest.telegram_chat_id, body)
         elif dest.type == DestinationType.ntfy and dest.ntfy_url and dest.ntfy_topic:
-            ok = await ntfy.send(dest.ntfy_url, dest.ntfy_topic, title, _strip_html(body), dest.ntfy_token)
+            factory = lambda: ntfy.send(dest.ntfy_url, dest.ntfy_topic, title, _strip_html(body), dest.ntfy_token)
 
+        if factory is None:
+            logger.warning("project=%s dest=%s type=%s — no usable config, dropped",
+                           project.name, dest.id, dest.type)
+            return {"dest_id": dest.id, "type": dest.type, "ok": False}
+
+        label = f"project={project.name} dest={dest.id} type={dest.type} target={_dest_target(dest)}"
+        ok = await _retry_send(label, factory)
         return {"dest_id": dest.id, "type": dest.type, "ok": ok}
 
     active = [dest for dest in project.destinations if dest.enabled]

@@ -150,6 +150,43 @@ def test_dispatch_slack_discord_email(db):
     assert len(res) == 3 and all(r["ok"] for r in res)
 
 
+# ── Retry / resilience ──────────────────────────────────────────────────────
+def test_retry_send_recovers_after_failure(monkeypatch):
+    async def noop(*a, **k):
+        return None
+    monkeypatch.setattr(webhook.asyncio, "sleep", noop)  # no real backoff delay
+    n = {"c": 0}
+
+    async def factory():
+        n["c"] += 1
+        return n["c"] >= 2   # fail once, succeed on the 2nd attempt
+    assert asyncio.run(webhook._retry_send("lbl", factory)) is True
+    assert n["c"] == 2
+
+
+def test_retry_send_exhausts_and_logs_error(monkeypatch, caplog):
+    import logging
+    async def noop(*a, **k):
+        return None
+    monkeypatch.setattr(webhook.asyncio, "sleep", noop)
+
+    async def always_fail():
+        return False
+    with caplog.at_level(logging.ERROR):
+        assert asyncio.run(webhook._retry_send("dest=9 type=ntfy", always_fail)) is False
+    assert any("DROPPED" in r.getMessage() for r in caplog.records)
+
+
+def test_retry_send_swallows_exceptions(monkeypatch):
+    async def noop(*a, **k):
+        return None
+    monkeypatch.setattr(webhook.asyncio, "sleep", noop)
+
+    async def boom():
+        raise RuntimeError("provider exploded")
+    assert asyncio.run(webhook._retry_send("lbl", boom)) is False
+
+
 # ── Coolify routing ─────────────────────────────────────────────────────────
 def _post_coolify(payload):
     return TestClient(app).post("/webhook/coolify/test-incoming-token", json=payload)
