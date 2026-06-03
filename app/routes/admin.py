@@ -24,6 +24,10 @@ def _safe_redirect(path: str, status_code: int = 303) -> RedirectResponse:
 
     Defense in depth: every admin redirect target is server-constructed and
     already local, but this guarantees it regardless of future refactors.
+
+    Structured as an early-return guard so the value only reaches the redirect
+    on the verified-safe branch (also the form static analysers recognise as a
+    sanitizing barrier).
     """
     parsed = urlparse(path)
     if (
@@ -33,7 +37,7 @@ def _safe_redirect(path: str, status_code: int = 303) -> RedirectResponse:
         or not path.startswith("/")
         or path.startswith("//")
     ):
-        path = "/admin"
+        return RedirectResponse(url="/admin", status_code=status_code)
     return RedirectResponse(url=path, status_code=status_code)
 
 
