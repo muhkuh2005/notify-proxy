@@ -6,3 +6,6 @@ __pycache__/
 .venv/
 dist/
 .claude/
+.coverage
+htmlcov/
+.pytest_cache/
