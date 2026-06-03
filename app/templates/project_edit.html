@@ -1,0 +1,204 @@
+{% extends "base.html" %}
+{% block title %}{% if project %}{{ project.name }}{% else %}New Project{% endif %} — notify-proxy{% endblock %}
+{% block content %}
+
+{% if project %}
+<div class="breadcrumb"><a href="/admin">Projects</a> / {% if project.coolify_project_name %}{{ project.coolify_project_name }} / {% endif %}{{ project.name }}</div>
+<h1>{% if project.coolify_project_name %}<span class="project-scope">{{ project.coolify_project_name }} —</span> {% endif %}{{ project.name }}</h1>
+
+{% if saved %}
+<div class="flash ok">Saved.</div>
+{% endif %}
+
+{% if request.query_params.get("start_bot") %}
+{% set bot_user = request.query_params.get("start_bot") %}
+{% set failed_dest = request.query_params.get("dest") %}
+<div class="flash" style="background:#2a1a10;border:1px solid #f59e0b44;color:var(--warn);border-radius:6px;padding:12px 16px;margin-bottom:16px;font-size:14px;line-height:1.8">
+  <strong>Bot konnte keine Nachricht senden.</strong><br>
+  {% if bot_user %}
+  Schick <code>/start</code> an <strong>@{{ bot_user }}</strong> damit der Bot dir schreiben darf.<br>
+  <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+    <a href="https://t.me/{{ bot_user }}?start=setup" target="_blank" class="btn-sm">
+      → /start an @{{ bot_user }} senden
+    </a>
+    {% if failed_dest %}
+    <form method="post" action="/admin/destinations/{{ failed_dest }}/test">
+      <button type="submit" class="btn-sm">↺ Erneut testen</button>
+    </form>
+    {% endif %}
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+
+<section class="card">
+  <h2>Webhook URL</h2>
+  <p>Per-project direct webhook (alternative to the global Coolify router):</p>
+  <code class="block">{{ request.base_url }}webhook/{{ project.token }}</code>
+  <p class="hint">Keep this secret.</p>
+</section>
+
+<section class="card">
+  <h2>Destinations</h2>
+  {% if destinations %}
+  <table>
+    <thead>
+      <tr><th>Bot</th><th>Type</th><th>Target</th><th>Filter</th><th>Enabled</th><th></th></tr>
+    </thead>
+    <tbody>
+    {% for d in destinations %}
+      <tr>
+        <td>
+          {% if d.bot %}
+            <a href="/admin/bots/{{ d.bot.id }}">{{ d.bot.name }}</a>
+          {% else %}
+            <span class="text-muted">legacy</span>
+          {% endif %}
+        </td>
+        <td><span class="badge {{ d.type.value }}">{{ d.type.value }}</span></td>
+        <td>
+          {% if d.type == "telegram" %}
+            {% if d.telegram_chat_id %}
+              <code>{{ d.telegram_chat_label or d.telegram_chat_id }}</code>
+            {% else %}
+              <code>{{ d.telegram_chat_label }}</code>
+              <a href="/admin/destinations/{{ d.id }}/verify-start" class="badge badge-warn" style="margin-left:6px">⏳ verifizieren</a>
+            {% endif %}
+          {% elif d.type == "ntfy" %}
+            <code>{{ d.ntfy_topic }}</code>
+          {% endif %}
+        </td>
+        <td>
+          <form method="post" action="/admin/destinations/{{ d.id }}/filter" style="display:inline">
+            <select name="filter_mode" onchange="this.form.submit()" style="min-width:120px;width:auto;font-size:12px;padding:4px 8px">
+              <option value="inherit" {% if d.filter_mode is none %}selected{% endif %}>— (project default)</option>
+              <option value="all" {% if d.filter_mode and d.filter_mode.value == 'all' %}selected{% endif %}>All events</option>
+              <option value="errors_only" {% if d.filter_mode and d.filter_mode.value == 'errors_only' %}selected{% endif %}>Errors only</option>
+              <option value="off" {% if d.filter_mode and d.filter_mode.value == 'off' %}selected{% endif %}>Off</option>
+            </select>
+          </form>
+        </td>
+        <td style="white-space:nowrap">
+          <form method="post" action="/admin/destinations/{{ d.id }}/toggle" style="display:inline">
+            <button type="submit" class="btn-toggle {% if d.enabled %}on{% else %}off{% endif %}">
+              {{ "on" if d.enabled else "off" }}
+            </button>
+          </form>
+          {% if d.last_test_ok == false %}
+          <form method="post" action="/admin/destinations/{{ d.id }}/test" style="display:inline;margin-left:4px">
+            <button type="submit" class="badge badge-warn" style="border:none;cursor:pointer" title="Test fehlgeschlagen — klicken zum Retry">⚠ failed</button>
+          </form>
+          {% elif d.last_test_ok == true %}
+          <span class="badge" style="background:#162416;color:var(--ok);margin-left:4px">✓</span>
+          {% endif %}
+        </td>
+        <td>
+          <form method="post" action="/admin/destinations/{{ d.id }}/delete"
+                onsubmit="return confirm('Delete this destination?')">
+            <button type="submit" class="btn-danger-sm">Delete</button>
+          </form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="empty">No destinations yet.</p>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h2>Add Destination</h2>
+  {% if bots %}
+  <form method="post" action="/admin/projects/{{ project.id }}/destinations/add" id="dest-form">
+    <label>Bot
+      <select name="bot_id" onchange="showTarget(this)">
+        {% for b in bots %}
+        <option value="{{ b.id }}" data-type="{{ b.type.value }}">{{ b.name }} ({{ b.type.value }})</option>
+        {% endfor %}
+      </select>
+    </label>
+
+    <div id="target-telegram">
+      <label>Chat ID / Channel
+        <input type="text" name="telegram_chat_id" placeholder="-1001234567890 or @username">
+      </label>
+      <p class="hint">Add the bot to the group/channel first, then use its ID.</p>
+    </div>
+
+    <div id="target-ntfy" style="display:none">
+      <label>Topic
+        <input type="text" name="ntfy_topic" placeholder="my-alerts">
+      </label>
+    </div>
+
+    <button type="submit" class="btn">Add Destination</button>
+  </form>
+
+  <script>
+  function showTarget(select) {
+    const type = select.options[select.selectedIndex].dataset.type;
+    document.getElementById('target-telegram').style.display = type === 'telegram' ? '' : 'none';
+    document.getElementById('target-ntfy').style.display = type === 'ntfy' ? '' : 'none';
+  }
+  // Run immediately (script is below the select, so it exists in DOM)
+  (function() {
+    const sel = document.querySelector('select[name="bot_id"]');
+    if (sel) showTarget(sel);
+  })();
+  </script>
+  {% else %}
+  <p class="empty">No bots configured yet. <a href="/admin/bots/new">Create a bot first.</a></p>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h2>Notification Filter</h2>
+  <form method="post" action="/admin/projects/{{ project.id }}/filter" style="flex-direction:row;align-items:center;gap:12px">
+    <label style="flex-direction:row;align-items:center;gap:8px;margin:0">
+      <span style="white-space:nowrap;color:var(--text-muted);font-size:13px">Notify on:</span>
+      <select name="filter_mode" onchange="this.form.submit()" style="min-width:150px;width:auto">
+        <option value="all" {% if project.filter_mode.value == 'all' %}selected{% endif %}>All events</option>
+        <option value="errors_only" {% if project.filter_mode.value == 'errors_only' %}selected{% endif %}>Errors only</option>
+        <option value="off" {% if project.filter_mode.value == 'off' %}selected{% endif %}>Off (ignore all)</option>
+      </select>
+    </label>
+  </form>
+</section>
+
+<section class="card">
+  <h2>Catch-all / Default</h2>
+  {% if project.is_default %}
+  <p style="margin-bottom:12px">This project is the <strong>default catch-all</strong>. Coolify notifications without a matching project are routed here.</p>
+  <form method="post" action="/admin/projects/{{ project.id }}/unset-default">
+    <button type="submit" class="btn btn-secondary">Remove Default</button>
+  </form>
+  {% else %}
+  <p style="margin-bottom:12px" class="hint">Make this project the fallback for Coolify notifications that don't match any specific project.</p>
+  <form method="post" action="/admin/projects/{{ project.id }}/set-default">
+    <button type="submit" class="btn btn-secondary">Set as Default</button>
+  </form>
+  {% endif %}
+</section>
+
+<section class="card danger-zone">
+  <h2>Danger Zone</h2>
+  <form method="post" action="/admin/projects/{{ project.id }}/delete"
+        onsubmit="return confirm('Delete project {{ project.name }} and all its destinations?')">
+    <button type="submit" class="btn-danger">Delete Project</button>
+  </form>
+</section>
+
+{% else %}
+<div class="breadcrumb"><a href="/admin">Projects</a> / New</div>
+<h1>New Project</h1>
+<section class="card">
+  <form method="post" action="/admin/projects/new">
+    <label>Name
+      <input type="text" name="name" required placeholder="gentle-seasons" autofocus>
+    </label>
+    <button type="submit" class="btn">Create Project</button>
+  </form>
+</section>
+{% endif %}
+{% endblock %}

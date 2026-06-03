@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Settings — notify-proxy{% endblock %}
+{% block content %}
+
+<div class="breadcrumb"><a href="/admin">Projects</a> / Settings</div>
+<h1>Settings</h1>
+
+{% if saved %}
+<div class="flash success">Saved.</div>
+{% endif %}
+
+<section class="card">
+  <h2>Verification Bot</h2>
+  <p style="margin-bottom:14px">
+    Dedizierter Telegram-Bot für den @username→ID-Verifikationsflow.
+    Dieser Bot darf <strong>keinen Webhook</strong> haben — er wird per <code>getUpdates</code> abgefragt.
+  </p>
+
+  {% if bot_info %}
+  <div class="info-box" style="margin-bottom:16px">
+    <strong>Aktuell:</strong> @{{ bot_info.username }} — {{ bot_info.first_name }}
+    {% if bot_info.can_read_all_group_messages %}<span class="badge" style="margin-left:6px">group access</span>{% endif %}
+  </div>
+  {% elif vbot_token_set %}
+  <div class="flash" style="background:#2a1a10;border:1px solid #f59e0b44;color:var(--warn);border-radius:6px;padding:10px 14px;margin-bottom:16px;font-size:14px;">
+    Token gesetzt, aber Bot nicht erreichbar — Token prüfen.
+  </div>
+  {% endif %}
+
+  <form method="post" action="/admin/settings">
+    <label>Bot Token
+      <input type="password" name="verification_bot_token"
+             placeholder="{% if vbot_token_set %}••••••••• (leer lassen = unverändert){% else %}1234567890:ABCdef...{% endif %}"
+             autocomplete="off">
+    </label>
+    <button type="submit" class="btn">Speichern</button>
+  </form>
+
+  {% if vbot_token_set %}
+  <form method="post" action="/admin/settings/clear-verification-bot"
+        onsubmit="return confirm('Verification Bot Token löschen?')"
+        style="margin-top:12px">
+    <button type="submit" class="btn-danger-sm">Token entfernen</button>
+  </form>
+  {% endif %}
+</section>
+
+{% endblock %}
