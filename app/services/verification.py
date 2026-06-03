@@ -1,6 +1,8 @@
 import os
 import secrets
-from datetime import datetime, timedelta
+from datetime import timedelta
+
+from ..util import now_utc
 
 VERIFICATION_BOT_TOKEN = os.environ.get("VERIFICATION_BOT_TOKEN", "")
 
@@ -8,7 +10,7 @@ _pending: dict[str, dict] = {}  # code -> {dest_id, label, expires}
 
 
 def _sweep() -> None:
-    now = datetime.utcnow()
+    now = now_utc()
     expired = [c for c, e in _pending.items() if e["expires"] < now]
     for c in expired:
         del _pending[c]
@@ -20,7 +22,7 @@ def is_configured() -> bool:
 
 def create(dest_id: int, label: str) -> str:
     _sweep()
-    now = datetime.utcnow()
+    now = now_utc()
     code = secrets.token_hex(3).upper()
     _pending[code] = {
         "dest_id": dest_id,

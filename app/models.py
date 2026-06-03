@@ -6,6 +6,7 @@ from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, Enu
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .database import Base
+from .util import now_utc
 
 
 class DestinationType(str, PyEnum):
@@ -45,7 +46,7 @@ class User(Base):
     name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     role: Mapped[str] = mapped_column(String(16), nullable=False, default="user")      # user | admin
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending") # pending | approved | blocked
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc)
     last_login: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     @property
@@ -93,7 +94,7 @@ class Project(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
     token: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, default=lambda: secrets.token_urlsafe(32))
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc)
     coolify_uuid: Mapped[str | None] = mapped_column(String(128), nullable=True, unique=True)
     coolify_project_name: Mapped[str | None] = mapped_column(String(256), nullable=True)
     is_default: Mapped[bool] = mapped_column(Boolean, default=False)

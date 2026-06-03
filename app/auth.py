@@ -15,7 +15,6 @@ and may view/use resources they own or that are marked `global`.
 import logging
 import os
 import secrets as _secrets
-from datetime import datetime
 
 from authlib.integrations.starlette_client import OAuth
 from fastapi import Depends, HTTPException, Request, status
@@ -24,6 +23,7 @@ from sqlalchemy.orm import Session
 
 from .database import get_db
 from .models import User
+from .util import now_utc
 
 logger = logging.getLogger(__name__)
 
@@ -108,7 +108,7 @@ def upsert_user(
             u.role = "admin"
             if u.status == "pending":
                 u.status = "approved"
-    u.last_login = datetime.utcnow()
+    u.last_login = now_utc()
     db.commit()
     db.refresh(u)
     return u
