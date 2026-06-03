@@ -13,21 +13,26 @@ def _run(coro):
 
 
 # ── ntfy ────────────────────────────────────────────────────────────────────
-def test_ntfy_success():
+def test_ntfy_success_with_unicode_title():
+    # Regression: emoji/em-dash titles must work (they're sent in the JSON body,
+    # not an HTTP header which can't carry non-ASCII).
     with respx.mock:
-        respx.post("https://ntfy.sh/alerts").mock(return_value=httpx.Response(200))
-        assert _run(ntfy.send("https://ntfy.sh", "alerts", "T", "body")) is True
+        route = respx.post("https://ntfy.sh").mock(return_value=httpx.Response(200))
+        assert _run(ntfy.send("https://ntfy.sh", "alerts", "✅ app — finished", "body")) is True
+        import json
+        sent = json.loads(route.calls.last.request.content)
+        assert sent["topic"] == "alerts" and sent["title"] == "✅ app — finished"
 
 
 def test_ntfy_failure():
     with respx.mock:
-        respx.post("https://ntfy.sh/alerts").mock(return_value=httpx.Response(403, text="forbidden"))
+        respx.post("https://ntfy.sh").mock(return_value=httpx.Response(403, text="forbidden"))
         assert _run(ntfy.send("https://ntfy.sh", "alerts", "T", "body")) is False
 
 
 def test_ntfy_sends_auth_header_with_token():
     with respx.mock:
-        route = respx.post("https://ntfy.sh/alerts").mock(return_value=httpx.Response(200))
+        route = respx.post("https://ntfy.sh").mock(return_value=httpx.Response(200))
         _run(ntfy.send("https://ntfy.sh", "alerts", "T", "body", token="secret"))
         assert route.calls.last.request.headers["Authorization"] == "Bearer secret"
 
