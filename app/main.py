@@ -73,6 +73,15 @@ with engine.connect() as _conn:
         "ALTER TABLE bots ADD COLUMN visibility TEXT NOT NULL DEFAULT 'private'",
         "ALTER TABLE destinations ADD COLUMN owner_id INTEGER REFERENCES users(id)",
         "ALTER TABLE destinations ADD COLUMN visibility TEXT NOT NULL DEFAULT 'private'",
+        "ALTER TABLE bots ADD COLUMN slack_url TEXT",
+        "ALTER TABLE bots ADD COLUMN discord_url TEXT",
+        "ALTER TABLE bots ADD COLUMN smtp_host TEXT",
+        "ALTER TABLE bots ADD COLUMN smtp_port INTEGER",
+        "ALTER TABLE bots ADD COLUMN smtp_user TEXT",
+        "ALTER TABLE bots ADD COLUMN smtp_password TEXT",
+        "ALTER TABLE bots ADD COLUMN smtp_from TEXT",
+        "ALTER TABLE bots ADD COLUMN smtp_use_tls INTEGER NOT NULL DEFAULT 1",
+        "ALTER TABLE destinations ADD COLUMN email_to TEXT",
     ]:
         try:
             _conn.execute(text(_stmt))

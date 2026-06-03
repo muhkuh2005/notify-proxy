@@ -13,6 +13,9 @@ class DestinationType(str, PyEnum):
     telegram = "telegram"
     ntfy = "ntfy"
     mattermost = "mattermost"
+    slack = "slack"
+    discord = "discord"
+    email = "email"
 
     def __str__(self) -> str:
         return self.value
@@ -81,6 +84,18 @@ class Bot(Base):
     mattermost_token: Mapped[str | None] = mapped_column(Text, nullable=True)
     mattermost_team: Mapped[str | None] = mapped_column(Text, nullable=True)  # team slug for channel lookups
 
+    # Slack / Discord (incoming webhook URL — channel fixed by the webhook)
+    slack_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    discord_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Email (SMTP)
+    smtp_host: Mapped[str | None] = mapped_column(Text, nullable=True)
+    smtp_port: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    smtp_user: Mapped[str | None] = mapped_column(Text, nullable=True)
+    smtp_password: Mapped[str | None] = mapped_column(Text, nullable=True)
+    smtp_from: Mapped[str | None] = mapped_column(Text, nullable=True)
+    smtp_use_tls: Mapped[bool] = mapped_column(Boolean, default=True)
+
     # Ownership / visibility (used when OAuth auth is enabled; ignored under Basic auth)
     owner_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
     visibility: Mapped[str] = mapped_column(String(16), nullable=False, default="private")  # private | global
@@ -122,6 +137,7 @@ class Destination(Base):
     ntfy_topic: Mapped[str | None] = mapped_column(Text, nullable=True)
     mattermost_target: Mapped[str | None] = mapped_column(Text, nullable=True)  # @user / channel / raw id input
     mattermost_channel_id: Mapped[str | None] = mapped_column(Text, nullable=True)  # resolved & cached channel_id
+    email_to: Mapped[str | None] = mapped_column(Text, nullable=True)  # recipient address (email destinations)
 
     # Ownership / visibility (used when OAuth auth is enabled; ignored under Basic auth)
     owner_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)

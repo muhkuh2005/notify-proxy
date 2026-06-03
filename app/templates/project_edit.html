@@ -70,6 +70,10 @@
             <code>{{ d.ntfy_topic }}</code>
           {% elif d.type == "mattermost" %}
             <code>{{ d.mattermost_target }}</code>
+          {% elif d.type == "email" %}
+            <code>{{ d.email_to }}</code>
+          {% elif d.type in ("slack", "discord") %}
+            <span class="text-muted">webhook</span>
           {% endif %}
         </td>
         <td>
@@ -163,15 +167,24 @@
       <p class="hint">@user → DM · name → channel (needs team on bot) · 26-char ID → direct channel</p>
     </div>
 
+    <div id="target-email" style="display:none">
+      <label>Recipient
+        <input type="email" name="email_to" placeholder="alerts@example.com">
+      </label>
+    </div>
+
+    <p id="target-none" class="hint" style="display:none">Slack/Discord post to the channel fixed by the bot's webhook — no target needed.</p>
+
     <button type="submit" class="btn">Add Destination</button>
   </form>
 
   <script>
   function showTarget(select) {
     const type = select.options[select.selectedIndex].dataset.type;
-    document.getElementById('target-telegram').style.display = type === 'telegram' ? '' : 'none';
-    document.getElementById('target-ntfy').style.display = type === 'ntfy' ? '' : 'none';
-    document.getElementById('target-mattermost').style.display = type === 'mattermost' ? '' : 'none';
+    ['telegram','ntfy','mattermost','email'].forEach(function(t) {
+      document.getElementById('target-' + t).style.display = type === t ? '' : 'none';
+    });
+    document.getElementById('target-none').style.display = (type === 'slack' || type === 'discord') ? '' : 'none';
   }
   // Run immediately (script is below the select, so it exists in DOM)
   (function() {

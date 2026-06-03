@@ -36,6 +36,36 @@
       <input type="password" name="mattermost_token" placeholder="Leave blank to keep current">
     </label>
     <p class="hint">Personal access token or bot-account token (sent as Bearer).</p>
+    {% elif bot.type == "slack" %}
+    <label>Slack Incoming Webhook URL
+      <input type="url" name="slack_url" value="{{ bot.slack_url or '' }}" placeholder="https://hooks.slack.com/services/...">
+    </label>
+    {% elif bot.type == "discord" %}
+    <label>Discord Webhook URL
+      <input type="url" name="discord_url" value="{{ bot.discord_url or '' }}" placeholder="https://discord.com/api/webhooks/...">
+    </label>
+    {% elif bot.type == "email" %}
+    <label>SMTP Host
+      <input type="text" name="smtp_host" value="{{ bot.smtp_host or '' }}" placeholder="smtp.example.com">
+    </label>
+    <label>SMTP Port
+      <input type="number" name="smtp_port" value="{{ bot.smtp_port or '' }}" placeholder="587">
+    </label>
+    <label>From Address
+      <input type="email" name="smtp_from" value="{{ bot.smtp_from or '' }}" placeholder="notify@example.com">
+    </label>
+    <label>SMTP User <span class="hint">(optional)</span>
+      <input type="text" name="smtp_user" value="{{ bot.smtp_user or '' }}">
+    </label>
+    <label>SMTP Password
+      <input type="password" name="smtp_password" placeholder="Leave blank to keep current">
+    </label>
+    <label>Use STARTTLS
+      <select name="smtp_use_tls">
+        <option value="true" {% if bot.smtp_use_tls %}selected{% endif %}>Yes</option>
+        <option value="false" {% if not bot.smtp_use_tls %}selected{% endif %}>No</option>
+      </select>
+    </label>
     {% endif %}
 
     <button type="submit" class="btn">Save</button>
@@ -67,6 +97,9 @@
         <option value="telegram">Telegram</option>
         <option value="ntfy">ntfy</option>
         <option value="mattermost">Mattermost</option>
+        <option value="slack">Slack</option>
+        <option value="discord">Discord</option>
+        <option value="email">Email (SMTP)</option>
       </select>
     </label>
 
@@ -99,15 +132,51 @@
       <p class="hint">Personal access token or bot-account token (sent as Bearer).</p>
     </div>
 
+    <div id="fields-slack" style="display:none">
+      <label>Slack Incoming Webhook URL
+        <input type="url" name="slack_url" placeholder="https://hooks.slack.com/services/...">
+      </label>
+    </div>
+
+    <div id="fields-discord" style="display:none">
+      <label>Discord Webhook URL
+        <input type="url" name="discord_url" placeholder="https://discord.com/api/webhooks/...">
+      </label>
+    </div>
+
+    <div id="fields-email" style="display:none">
+      <label>SMTP Host
+        <input type="text" name="smtp_host" placeholder="smtp.example.com">
+      </label>
+      <label>SMTP Port
+        <input type="number" name="smtp_port" placeholder="587">
+      </label>
+      <label>From Address
+        <input type="email" name="smtp_from" placeholder="notify@example.com">
+      </label>
+      <label>SMTP User <span class="hint">(optional)</span>
+        <input type="text" name="smtp_user">
+      </label>
+      <label>SMTP Password
+        <input type="password" name="smtp_password">
+      </label>
+      <label>Use STARTTLS
+        <select name="smtp_use_tls">
+          <option value="true">Yes</option>
+          <option value="false">No</option>
+        </select>
+      </label>
+    </div>
+
     <button type="submit" class="btn">Create Bot</button>
   </form>
 </section>
 
 <script>
 function showBotFields(type) {
-  document.getElementById('fields-telegram').style.display = type === 'telegram' ? '' : 'none';
-  document.getElementById('fields-ntfy').style.display = type === 'ntfy' ? '' : 'none';
-  document.getElementById('fields-mattermost').style.display = type === 'mattermost' ? '' : 'none';
+  ['telegram','ntfy','mattermost','slack','discord','email'].forEach(function(t) {
+    document.getElementById('fields-' + t).style.display = type === t ? '' : 'none';
+  });
 }
 </script>
 {% endif %}

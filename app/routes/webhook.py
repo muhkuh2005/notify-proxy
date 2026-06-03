@@ -8,7 +8,8 @@ from sqlalchemy.orm import Session, selectinload
 
 from ..database import get_db
 from ..models import Destination, DestinationType, FilterMode, Project
-from ..notifiers import telegram, ntfy, mattermost
+from ..notifiers import telegram, ntfy, mattermost, slack, discord
+from ..notifiers import email as email_notifier
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -164,6 +165,18 @@ async def _dispatch(project: Project, payload: dict, db: Session) -> list[dict]:
                 ok = await mattermost.send(
                     bot.mattermost_url, bot.mattermost_token,
                     dest.mattermost_channel_id, _to_markdown(body),
+                )
+        elif bot and dest.type == DestinationType.slack:
+            if bot.slack_url:
+                ok = await slack.send(bot.slack_url, _to_markdown(body))
+        elif bot and dest.type == DestinationType.discord:
+            if bot.discord_url:
+                ok = await discord.send(bot.discord_url, _to_markdown(body))
+        elif bot and dest.type == DestinationType.email:
+            if bot.smtp_host and bot.smtp_from and dest.email_to:
+                ok = await email_notifier.send(
+                    bot.smtp_host, bot.smtp_port, bot.smtp_user, bot.smtp_password,
+                    bot.smtp_from, bot.smtp_use_tls, dest.email_to, title, _strip_html(body),
                 )
         # Legacy fallback: inline credentials on destination
         elif dest.type == DestinationType.telegram and dest.telegram_bot_token and dest.telegram_chat_id:

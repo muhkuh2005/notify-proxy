@@ -9,7 +9,8 @@ from sqlalchemy.orm import Session, selectinload
 from ..auth import can_edit, can_view, require_admin, require_user
 from ..database import get_db
 from ..models import Bot, Destination, DestinationType, FilterMode, Project, User
-from ..notifiers import mattermost
+from ..notifiers import discord, mattermost, slack
+from ..notifiers import email as email_notifier
 from ..notifiers import telegram as telegram_notifier
 from ..services import coolify_sync, settings_store, verification
 
@@ -132,6 +133,7 @@ async def destination_add(
     telegram_chat_id: str = Form(""),
     ntfy_topic: str = Form(""),
     mattermost_target: str = Form(""),
+    email_to: str = Form(""),
     db: Session = Depends(get_db),
     user: User = Depends(require_user),
 ):
@@ -151,6 +153,8 @@ async def destination_add(
         raise HTTPException(status_code=400, detail="ntfy_topic required for ntfy bot")
     if bot.type == DestinationType.mattermost and not mattermost_target.strip():
         raise HTTPException(status_code=400, detail="mattermost_target required for Mattermost bot")
+    if bot.type == DestinationType.email and not email_to.strip():
+        raise HTTPException(status_code=400, detail="email_to required for Email bot")
 
     chat_id = telegram_chat_id.strip() or None
     chat_label: str | None = None
@@ -211,21 +215,32 @@ async def destination_add(
         ntfy_topic=ntfy_topic.strip() or None,
         mattermost_target=mattermost_target.strip() or None,
         mattermost_channel_id=mm_channel_id,
+        email_to=email_to.strip() or None,
         owner_id=user.id,
     )
     db.add(dest)
     db.commit()
 
-    # Test message: verify the bot can actually reach this chat
+    # Test message: verify the bot can actually reach this target
     if bot.type == DestinationType.telegram and bot.telegram_bot_token and dest.telegram_chat_id:
         redirect = await _test_and_redirect(db, dest, bot.telegram_bot_token, f"/admin/projects/{project_id}")
         return redirect
 
+    _TEST_MD = "✅ **notify-proxy** — Destination erfolgreich eingerichtet."
+    ok: bool | None = None
     if bot.type == DestinationType.mattermost and dest.mattermost_channel_id:
-        ok = await mattermost.send(
-            bot.mattermost_url, bot.mattermost_token, dest.mattermost_channel_id,
-            "✅ **notify-proxy** — Destination erfolgreich eingerichtet.",
+        ok = await mattermost.send(bot.mattermost_url, bot.mattermost_token, dest.mattermost_channel_id, _TEST_MD)
+    elif bot.type == DestinationType.slack and bot.slack_url:
+        ok = await slack.send(bot.slack_url, _TEST_MD)
+    elif bot.type == DestinationType.discord and bot.discord_url:
+        ok = await discord.send(bot.discord_url, _TEST_MD)
+    elif bot.type == DestinationType.email and bot.smtp_host and bot.smtp_from and dest.email_to:
+        ok = await email_notifier.send(
+            bot.smtp_host, bot.smtp_port, bot.smtp_user, bot.smtp_password,
+            bot.smtp_from, bot.smtp_use_tls, dest.email_to,
+            "notify-proxy test", "Destination erfolgreich eingerichtet.",
         )
+    if ok is not None:
         dest.last_test_ok = ok
         db.commit()
 
@@ -465,6 +480,14 @@ def bot_create(
     mattermost_url: str = Form(""),
     mattermost_token: str = Form(""),
     mattermost_team: str = Form(""),
+    slack_url: str = Form(""),
+    discord_url: str = Form(""),
+    smtp_host: str = Form(""),
+    smtp_port: str = Form(""),
+    smtp_user: str = Form(""),
+    smtp_password: str = Form(""),
+    smtp_from: str = Form(""),
+    smtp_use_tls: str = Form("true"),
     db: Session = Depends(get_db),
     user: User = Depends(require_user),
 ):
@@ -483,6 +506,14 @@ def bot_create(
         mattermost_url=mattermost_url or None,
         mattermost_token=mattermost_token or None,
         mattermost_team=mattermost_team or None,
+        slack_url=slack_url or None,
+        discord_url=discord_url or None,
+        smtp_host=smtp_host or None,
+        smtp_port=int(smtp_port) if smtp_port.strip().isdigit() else None,
+        smtp_user=smtp_user or None,
+        smtp_password=smtp_password or None,
+        smtp_from=smtp_from or None,
+        smtp_use_tls=(smtp_use_tls != "false"),
         owner_id=user.id,
     )
     db.add(bot)
@@ -519,6 +550,14 @@ def bot_update(
     mattermost_url: str = Form(""),
     mattermost_token: str = Form(""),
     mattermost_team: str = Form(""),
+    slack_url: str = Form(""),
+    discord_url: str = Form(""),
+    smtp_host: str = Form(""),
+    smtp_port: str = Form(""),
+    smtp_user: str = Form(""),
+    smtp_password: str = Form(""),
+    smtp_from: str = Form(""),
+    smtp_use_tls: str = Form("true"),
     db: Session = Depends(get_db),
     user: User = Depends(require_user),
 ):
@@ -535,6 +574,19 @@ def bot_update(
         bot.mattermost_team = mattermost_team or bot.mattermost_team
         if mattermost_token:
             bot.mattermost_token = mattermost_token
+    elif bot.type == DestinationType.slack:
+        bot.slack_url = slack_url or bot.slack_url
+    elif bot.type == DestinationType.discord:
+        bot.discord_url = discord_url or bot.discord_url
+    elif bot.type == DestinationType.email:
+        bot.smtp_host = smtp_host or bot.smtp_host
+        if smtp_port.strip().isdigit():
+            bot.smtp_port = int(smtp_port)
+        bot.smtp_user = smtp_user or bot.smtp_user
+        if smtp_password:
+            bot.smtp_password = smtp_password
+        bot.smtp_from = smtp_from or bot.smtp_from
+        bot.smtp_use_tls = (smtp_use_tls != "false")
     db.commit()
     return _safe_redirect("/admin/bots")
 

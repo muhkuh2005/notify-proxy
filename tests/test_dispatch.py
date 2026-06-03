@@ -27,9 +27,8 @@ def db():
 def no_network(monkeypatch):
     async def ok(*a, **k):
         return True
-    monkeypatch.setattr("app.notifiers.ntfy.send", ok)
-    monkeypatch.setattr("app.notifiers.telegram.send", ok)
-    monkeypatch.setattr("app.notifiers.mattermost.send", ok)
+    for mod in ("ntfy", "telegram", "mattermost", "slack", "discord", "email"):
+        monkeypatch.setattr(f"app.notifiers.{mod}.send", ok)
 
 
 @pytest.fixture(autouse=True)
@@ -102,6 +101,21 @@ def test_dispatch_disabled_destination_ignored(db):
     p = _project(db, "d-dis"); b = _bot(db, "d-dis-b")
     _dest(db, p, b, enabled=False)
     assert _run(p.id, CLEAN, db) == []
+
+
+def test_dispatch_slack_discord_email(db):
+    p = _project(db, "d-multi")
+    slack_bot = Bot(name="d-slack", type=DestinationType.slack, ntfy_url=None, slack_url="https://hooks.slack/x")
+    disc_bot = Bot(name="d-disc", type=DestinationType.discord, discord_url="https://discord/x")
+    mail_bot = Bot(name="d-mail", type=DestinationType.email, smtp_host="smtp.x", smtp_from="a@x")
+    db.add_all([slack_bot, disc_bot, mail_bot]); db.commit()
+    db.refresh(slack_bot); db.refresh(disc_bot); db.refresh(mail_bot)
+    db.add(Destination(project_id=p.id, bot_id=slack_bot.id, type=DestinationType.slack))
+    db.add(Destination(project_id=p.id, bot_id=disc_bot.id, type=DestinationType.discord))
+    db.add(Destination(project_id=p.id, bot_id=mail_bot.id, type=DestinationType.email, email_to="to@x"))
+    db.commit()
+    res = _run(p.id, CLEAN, db)
+    assert len(res) == 3 and all(r["ok"] for r in res)
 
 
 # ── Coolify routing ─────────────────────────────────────────────────────────
