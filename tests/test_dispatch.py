@@ -103,6 +103,38 @@ def test_dispatch_disabled_destination_ignored(db):
     assert _run(p.id, CLEAN, db) == []
 
 
+def test_dispatch_ntfy_auto_priority_tags_click(db, monkeypatch):
+    calls = []
+
+    async def rec(*a, **k):
+        calls.append(k)
+        return True
+    monkeypatch.setattr("app.notifiers.ntfy.send", rec)
+    p = _project(db, "d-prio"); b = _bot(db, "d-prio-b")
+    _dest(db, p, b)
+    _run(p.id, {"status": "failed", "application_url": "https://app"}, db)
+    assert calls[-1]["priority"] == 4 and calls[-1]["tags"] == ["rotating_light"]
+    assert calls[-1]["click"] == "https://app" and calls[-1]["markdown"] is True
+    calls.clear()
+    _run(p.id, {"status": "finished"}, db)
+    assert calls[-1]["priority"] == 3 and calls[-1]["tags"] == ["white_check_mark"]
+
+
+def test_dispatch_ntfy_priority_override(db, monkeypatch):
+    calls = []
+
+    async def rec(*a, **k):
+        calls.append(k)
+        return True
+    monkeypatch.setattr("app.notifiers.ntfy.send", rec)
+    p = _project(db, "d-ovr"); b = _bot(db, "d-ovr-b")
+    db.add(Destination(project_id=p.id, bot_id=b.id, type=DestinationType.ntfy,
+                       ntfy_topic="t", ntfy_priority=5))
+    db.commit()
+    _run(p.id, {"status": "finished"}, db)  # auto would be 3; override forces 5
+    assert calls[-1]["priority"] == 5
+
+
 def test_dispatch_slack_discord_email(db):
     p = _project(db, "d-multi")
     slack_bot = Bot(name="d-slack", type=DestinationType.slack, ntfy_url=None, slack_url="https://hooks.slack/x")

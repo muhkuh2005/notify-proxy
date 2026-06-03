@@ -159,7 +159,13 @@ async def _dispatch(project: Project, payload: dict, db: Session) -> list[dict]:
                 ok = await telegram.send(bot.telegram_bot_token, dest.telegram_chat_id, body)
         elif bot and dest.type == DestinationType.ntfy:
             if bot.ntfy_url and dest.ntfy_topic:
-                ok = await ntfy.send(bot.ntfy_url, dest.ntfy_topic, title, _strip_html(body), bot.ntfy_token)
+                prio = dest.ntfy_priority or (4 if is_err else 3)
+                tags = ["rotating_light"] if is_err else ["white_check_mark"]
+                click = payload.get("application_url") or payload.get("url") or None
+                ok = await ntfy.send(
+                    bot.ntfy_url, dest.ntfy_topic, title, _to_markdown(body), bot.ntfy_token,
+                    priority=prio, tags=tags, click=click, markdown=True,
+                )
         elif bot and dest.type == DestinationType.mattermost:
             if bot.mattermost_url and bot.mattermost_token and dest.mattermost_channel_id:
                 ok = await mattermost.send(

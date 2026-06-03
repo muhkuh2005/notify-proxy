@@ -24,6 +24,19 @@ def test_ntfy_success_with_unicode_title():
         assert sent["topic"] == "alerts" and sent["title"] == "✅ app — finished"
 
 
+def test_ntfy_includes_priority_tags_click_markdown():
+    import json
+    with respx.mock:
+        route = respx.post("https://ntfy.sh").mock(return_value=httpx.Response(200))
+        _run(ntfy.send("https://ntfy.sh", "t", "Ti", "body",
+                       priority=4, tags=["rotating_light"], click="https://x", markdown=True))
+        sent = json.loads(route.calls.last.request.content)
+        assert sent["priority"] == 4
+        assert sent["tags"] == ["rotating_light"]
+        assert sent["click"] == "https://x"
+        assert sent["markdown"] is True
+
+
 def test_ntfy_failure():
     with respx.mock:
         respx.post("https://ntfy.sh").mock(return_value=httpx.Response(403, text="forbidden"))

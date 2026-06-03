@@ -137,6 +137,7 @@ class Destination(Base):
     telegram_chat_id: Mapped[str | None] = mapped_column(Text, nullable=True)
     telegram_chat_label: Mapped[str | None] = mapped_column(Text, nullable=True)  # original @username input
     ntfy_topic: Mapped[str | None] = mapped_column(Text, nullable=True)
+    ntfy_priority: Mapped[int | None] = mapped_column(Integer, nullable=True)  # None = auto (from event severity)
     mattermost_target: Mapped[str | None] = mapped_column(Text, nullable=True)  # @user / channel / raw id input
     mattermost_channel_id: Mapped[str | None] = mapped_column(Text, nullable=True)  # resolved & cached channel_id
     email_to: Mapped[str | None] = mapped_column(Text, nullable=True)  # recipient address (email destinations)

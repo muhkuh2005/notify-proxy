@@ -158,6 +158,16 @@
       <label>Topic
         <input type="text" name="ntfy_topic" placeholder="my-alerts">
       </label>
+      <label>Priority
+        <select name="ntfy_priority">
+          <option value="">Auto (errors loud, success quiet)</option>
+          <option value="5">5 — max / urgent</option>
+          <option value="4">4 — high</option>
+          <option value="3">3 — default</option>
+          <option value="2">2 — low</option>
+          <option value="1">1 — min</option>
+        </select>
+      </label>
     </div>
 
     <div id="target-mattermost" style="display:none">

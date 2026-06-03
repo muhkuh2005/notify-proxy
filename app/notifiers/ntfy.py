@@ -5,12 +5,30 @@ import httpx
 logger = logging.getLogger(__name__)
 
 
-async def send(ntfy_url: str, topic: str, title: str, message: str, token: str | None = None) -> bool:
-    # Use ntfy's JSON publishing API (POST to the base URL with topic in the body).
-    # The older "Title" HTTP header can't carry non-ASCII (emoji/em-dash) titles —
-    # httpx refuses to encode them — so titles like "✅ app: finished" would fail.
+async def send(
+    ntfy_url: str,
+    topic: str,
+    title: str,
+    message: str,
+    token: str | None = None,
+    priority: int | None = None,
+    tags: list[str] | None = None,
+    click: str | None = None,
+    markdown: bool = False,
+) -> bool:
+    # ntfy JSON publishing API (POST to the base URL with topic in the body).
+    # The body is UTF-8, so unicode titles (emoji/em-dash) work — unlike the
+    # older "Title" HTTP header which httpx can't encode.
     url = ntfy_url.rstrip("/")
-    payload = {"topic": topic, "title": title, "message": message}
+    payload: dict = {"topic": topic, "title": title, "message": message}
+    if priority:
+        payload["priority"] = priority
+    if tags:
+        payload["tags"] = tags
+    if click:
+        payload["click"] = click
+    if markdown:
+        payload["markdown"] = True
     headers = {}
     if token:
         headers["Authorization"] = f"Bearer {token}"
