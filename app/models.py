@@ -5,6 +5,7 @@ from enum import Enum as PyEnum
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, Enum, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from .crypto import EncryptedText
 from .database import Base
 from .util import now_utc
 
@@ -33,7 +34,7 @@ class FilterMode(str, PyEnum):
 class Setting(Base):
     __tablename__ = "settings"
     key: Mapped[str] = mapped_column(String(128), primary_key=True)
-    value: Mapped[str] = mapped_column(Text, nullable=False)
+    value: Mapped[str] = mapped_column(EncryptedText, nullable=False)  # may hold a bot token
 
 
 class User(Base):
@@ -73,26 +74,27 @@ class Bot(Base):
     type: Mapped[DestinationType] = mapped_column(Enum(DestinationType), nullable=False)
 
     # Telegram
-    telegram_bot_token: Mapped[str | None] = mapped_column(Text, nullable=True)
+    telegram_bot_token: Mapped[str | None] = mapped_column(EncryptedText, nullable=True)
 
     # ntfy
     ntfy_url: Mapped[str | None] = mapped_column(Text, nullable=True)
-    ntfy_token: Mapped[str | None] = mapped_column(Text, nullable=True)
+    ntfy_token: Mapped[str | None] = mapped_column(EncryptedText, nullable=True)
 
     # Mattermost (REST API v4 — personal access or bot-account token)
     mattermost_url: Mapped[str | None] = mapped_column(Text, nullable=True)
-    mattermost_token: Mapped[str | None] = mapped_column(Text, nullable=True)
+    mattermost_token: Mapped[str | None] = mapped_column(EncryptedText, nullable=True)
     mattermost_team: Mapped[str | None] = mapped_column(Text, nullable=True)  # team slug for channel lookups
 
-    # Slack / Discord (incoming webhook URL — channel fixed by the webhook)
-    slack_url: Mapped[str | None] = mapped_column(Text, nullable=True)
-    discord_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Slack / Discord (incoming webhook URL — channel fixed by the webhook).
+    # The URL is itself the secret, so it is encrypted at rest.
+    slack_url: Mapped[str | None] = mapped_column(EncryptedText, nullable=True)
+    discord_url: Mapped[str | None] = mapped_column(EncryptedText, nullable=True)
 
     # Email (SMTP)
     smtp_host: Mapped[str | None] = mapped_column(Text, nullable=True)
     smtp_port: Mapped[int | None] = mapped_column(Integer, nullable=True)
     smtp_user: Mapped[str | None] = mapped_column(Text, nullable=True)
-    smtp_password: Mapped[str | None] = mapped_column(Text, nullable=True)
+    smtp_password: Mapped[str | None] = mapped_column(EncryptedText, nullable=True)
     smtp_from: Mapped[str | None] = mapped_column(Text, nullable=True)
     smtp_use_tls: Mapped[bool] = mapped_column(Boolean, default=True)
 
@@ -144,9 +146,9 @@ class Destination(Base):
     visibility: Mapped[str] = mapped_column(String(16), nullable=False, default="private")  # private | global
 
     # Legacy inline credentials (kept for backwards compat, not used by new UI)
-    telegram_bot_token: Mapped[str | None] = mapped_column(Text, nullable=True)
+    telegram_bot_token: Mapped[str | None] = mapped_column(EncryptedText, nullable=True)
     ntfy_url: Mapped[str | None] = mapped_column(Text, nullable=True)
-    ntfy_token: Mapped[str | None] = mapped_column(Text, nullable=True)
+    ntfy_token: Mapped[str | None] = mapped_column(EncryptedText, nullable=True)
 
     bot: Mapped["Bot | None"] = relationship(back_populates="destinations")
     project: Mapped["Project"] = relationship(back_populates="destinations")

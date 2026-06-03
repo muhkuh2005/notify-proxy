@@ -20,7 +20,10 @@ notify-proxy handles bot tokens and routes notifications. When self-hosting:
 - **Set a strong `ADMIN_PASSWORD`** (Basic mode) — the app refuses to start otherwise.
 - **Set `COOLIFY_INCOMING_TOKEN`** — the central Coolify webhook is disabled until it is configured.
 - **Terminate TLS in front of the admin UI** — Basic credentials and the session cookie travel on every request.
-- **Protect the `/data` volume** — bot tokens are stored unencrypted in SQLite.
+- **Protect the `/data` volume** — and optionally set `TOKEN_ENCRYPTION_KEY` to
+  encrypt secret columns (bot tokens, Slack/Discord webhook URLs, SMTP passwords)
+  at rest. Without it they are stored as plaintext. Keep the key stable and out
+  of the database backup.
 
 ### OAuth mode
 

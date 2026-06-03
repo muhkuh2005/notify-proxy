@@ -34,6 +34,8 @@ All configuration is via environment variables:
 | `ADMIN_USER` | no | `admin` | Admin UI username (HTTP Basic) |
 | `ADMIN_PASSWORD` | **yes** | — | Admin UI password; app won't start if unset/`changeme` |
 | `DATABASE_URL` | no | `sqlite:////data/notify-proxy.db` | SQLAlchemy database URL |
+| `TOKEN_ENCRYPTION_KEY` | no | — | Fernet key; encrypts secret columns (tokens, webhook URLs, SMTP pw) at rest |
+| `RATELIMIT_ENABLED` | no | `true` | In-memory per-IP rate limiting on login + webhooks |
 | `LOG_LEVEL` | no | `INFO` | `DEBUG` / `INFO` / `WARNING` |
 | `COOLIFY_BASE_URL` | no | — | Coolify instance URL, enables "Sync from Coolify" |
 | `COOLIFY_TOKEN` | no | — | Coolify API token (for sync) |
