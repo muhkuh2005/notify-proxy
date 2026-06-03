@@ -11,17 +11,25 @@
 {% if bots %}
 <table>
   <thead>
-    <tr><th>Name</th><th>Type</th><th>Used by</th><th></th></tr>
+    <tr><th>Name</th><th>Type</th><th>Visibility</th><th>Used by</th><th></th></tr>
   </thead>
   <tbody>
   {% for b in bots %}
     <tr>
-      <td><a href="/admin/bots/{{ b.id }}">{{ b.name }}</a></td>
+      <td>{% if b.editable %}<a href="/admin/bots/{{ b.id }}">{{ b.name }}</a>{% else %}{{ b.name }}{% endif %}</td>
       <td><span class="badge {{ b.type.value }}">{{ b.type.value }}</span></td>
-      <td>{{ b.destinations | length }} destination(s)</td>
       <td>
-        <a href="/admin/bots/{{ b.id }}" class="btn-sm">Edit</a>
+        {% if b.editable %}
+        <form method="post" action="/admin/bots/{{ b.id }}/visibility" style="display:inline">
+          <input type="hidden" name="visibility" value="{{ 'private' if b.visibility == 'global' else 'global' }}">
+          <button type="submit" class="badge {{ 'badge-default' if b.visibility == 'global' else 'badge-muted' }}" style="border:none;cursor:pointer" title="Click to toggle">{{ b.visibility }}</button>
+        </form>
+        {% else %}
+        <span class="badge {{ 'badge-default' if b.visibility == 'global' else 'badge-muted' }}">{{ b.visibility }}</span>
+        {% endif %}
       </td>
+      <td>{{ b.destinations | length }} destination(s)</td>
+      <td>{% if b.editable %}<a href="/admin/bots/{{ b.id }}" class="btn-sm">Edit</a>{% endif %}</td>
     </tr>
   {% endfor %}
   </tbody>

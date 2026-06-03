@@ -17,7 +17,24 @@ make sure you're running the current image before reporting.
 
 notify-proxy handles bot tokens and routes notifications. When self-hosting:
 
-- **Set a strong `ADMIN_PASSWORD`** — the app refuses to start otherwise.
+- **Set a strong `ADMIN_PASSWORD`** (Basic mode) — the app refuses to start otherwise.
 - **Set `COOLIFY_INCOMING_TOKEN`** — the central Coolify webhook is disabled until it is configured.
-- **Terminate TLS in front of the admin UI** — HTTP Basic Auth sends credentials on every request.
+- **Terminate TLS in front of the admin UI** — Basic credentials and the session cookie travel on every request.
 - **Protect the `/data` volume** — bot tokens are stored unencrypted in SQLite.
+
+### OAuth mode
+
+- **Always set `OAUTH_ADMIN_EMAILS`** when using a public provider (e.g. GitHub).
+  With it empty the *first* user to log in becomes admin — a stranger could claim
+  it before you do.
+- **Use a strong random `SESSION_SECRET`** and keep it stable across instances; it
+  signs the session cookie.
+- **Set `BASE_URL` to your `https://` URL** so the session cookie is marked
+  `Secure` and OAuth redirect URIs are correct.
+- **For Microsoft, pin `MICROSOFT_TENANT` to your tenant id** (not the default
+  `common`). The admin-email bootstrap only trusts a provider-verified email, but
+  restricting the tenant additionally prevents foreign-directory accounts from
+  authenticating at all.
+- A `global` bot can be *used* (its token sends messages) by any approved user —
+  share credentials deliberately. The token itself stays viewable only to its
+  owner and admins.

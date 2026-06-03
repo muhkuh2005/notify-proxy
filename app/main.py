@@ -4,9 +4,12 @@ import os
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
+from starlette.middleware.sessions import SessionMiddleware
 
+from . import auth
 from .database import Base, engine
 from .routes.admin import router as admin_router
+from .routes.auth import router as auth_router
 from .routes.webhook import router as webhook_router
 
 logging.basicConfig(
@@ -14,16 +17,33 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s %(name)s %(message)s",
 )
 
-# Refuse to boot with an unset or default admin password. The admin UI has no
-# other auth gate, so a weak password exposes every stored bot token.
-if os.environ.get("ADMIN_PASSWORD", "") in ("", "changeme"):
+if auth.oauth_enabled():
+    # OAuth mode: a signed session cookie is mandatory; Basic password is not used.
+    if not os.environ.get("SESSION_SECRET"):
+        raise RuntimeError("SESSION_SECRET must be set when OAUTH_ENABLED_PROVIDERS is configured.")
+    if not auth.available_providers():
+        raise RuntimeError(
+            "OAUTH_ENABLED_PROVIDERS is set but no provider has credentials "
+            "(GITHUB_CLIENT_ID / MICROSOFT_CLIENT_ID)."
+        )
+elif os.environ.get("ADMIN_PASSWORD", "") in ("", "changeme"):
+    # Basic mode: refuse to boot with an unset/default password — the admin UI
+    # has no other auth gate, so a weak password exposes every stored bot token.
     raise RuntimeError(
-        "ADMIN_PASSWORD is unset or still 'changeme'. Set a strong ADMIN_PASSWORD "
-        "(env var) before starting notify-proxy."
+        "ADMIN_PASSWORD is unset or still 'changeme'. Set a strong ADMIN_PASSWORD, "
+        "or enable OAuth via OAUTH_ENABLED_PROVIDERS."
     )
 
 
 app = FastAPI(title="notify-proxy", docs_url=None, redoc_url=None)
+
+if auth.oauth_enabled():
+    app.add_middleware(
+        SessionMiddleware,
+        secret_key=os.environ["SESSION_SECRET"],
+        same_site="lax",
+        https_only=auth.BASE_URL.startswith("https"),
+    )
 
 @app.get("/health")
 def health():
@@ -49,6 +69,10 @@ with engine.connect() as _conn:
         "ALTER TABLE bots ADD COLUMN mattermost_team TEXT",
         "ALTER TABLE destinations ADD COLUMN mattermost_target TEXT",
         "ALTER TABLE destinations ADD COLUMN mattermost_channel_id TEXT",
+        "ALTER TABLE bots ADD COLUMN owner_id INTEGER REFERENCES users(id)",
+        "ALTER TABLE bots ADD COLUMN visibility TEXT NOT NULL DEFAULT 'private'",
+        "ALTER TABLE destinations ADD COLUMN owner_id INTEGER REFERENCES users(id)",
+        "ALTER TABLE destinations ADD COLUMN visibility TEXT NOT NULL DEFAULT 'private'",
     ]:
         try:
             _conn.execute(text(_stmt))
@@ -59,5 +83,6 @@ with engine.connect() as _conn:
 static_dir = os.path.join(os.path.dirname(__file__), "static")
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
+app.include_router(auth_router)
 app.include_router(admin_router)
 app.include_router(webhook_router)

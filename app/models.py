@@ -2,7 +2,7 @@ import secrets
 from datetime import datetime
 from enum import Enum as PyEnum
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, Enum
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, Enum, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .database import Base
@@ -32,6 +32,35 @@ class Setting(Base):
     value: Mapped[str] = mapped_column(Text, nullable=False)
 
 
+class User(Base):
+    """An OAuth-authenticated user. Login alone does not grant access:
+    `status` must be `approved` (or `role` == `admin`)."""
+    __tablename__ = "users"
+    __table_args__ = (UniqueConstraint("provider", "provider_sub", name="uq_provider_sub"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    provider: Mapped[str] = mapped_column(String(32), nullable=False)       # github | microsoft
+    provider_sub: Mapped[str] = mapped_column(String(255), nullable=False)  # stable id from provider
+    email: Mapped[str | None] = mapped_column(String(320), nullable=True)
+    name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    role: Mapped[str] = mapped_column(String(16), nullable=False, default="user")      # user | admin
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending") # pending | approved | blocked
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    last_login: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    @property
+    def is_admin(self) -> bool:
+        return self.role == "admin"
+
+    @property
+    def is_approved(self) -> bool:
+        return self.role == "admin" or self.status == "approved"
+
+    @property
+    def display(self) -> str:
+        return self.name or self.email or f"{self.provider}:{self.provider_sub}"
+
+
 class Bot(Base):
     __tablename__ = "bots"
 
@@ -50,6 +79,10 @@ class Bot(Base):
     mattermost_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     mattermost_token: Mapped[str | None] = mapped_column(Text, nullable=True)
     mattermost_team: Mapped[str | None] = mapped_column(Text, nullable=True)  # team slug for channel lookups
+
+    # Ownership / visibility (used when OAuth auth is enabled; ignored under Basic auth)
+    owner_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
+    visibility: Mapped[str] = mapped_column(String(16), nullable=False, default="private")  # private | global
 
     destinations: Mapped[list["Destination"]] = relationship(back_populates="bot")
 
@@ -88,6 +121,10 @@ class Destination(Base):
     ntfy_topic: Mapped[str | None] = mapped_column(Text, nullable=True)
     mattermost_target: Mapped[str | None] = mapped_column(Text, nullable=True)  # @user / channel / raw id input
     mattermost_channel_id: Mapped[str | None] = mapped_column(Text, nullable=True)  # resolved & cached channel_id
+
+    # Ownership / visibility (used when OAuth auth is enabled; ignored under Basic auth)
+    owner_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
+    visibility: Mapped[str] = mapped_column(String(16), nullable=False, default="private")  # private | global
 
     # Legacy inline credentials (kept for backwards compat, not used by new UI)
     telegram_bot_token: Mapped[str | None] = mapped_column(Text, nullable=True)

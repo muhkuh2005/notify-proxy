@@ -11,8 +11,15 @@
     <a href="/admin" class="brand">notify-proxy</a>
     <div class="nav-links">
       <a href="/admin/bots" class="nav-link">Bots</a>
+      {% if user and user.is_admin %}
       <a href="/admin/settings" class="nav-link">Settings</a>
+      <a href="/admin/users" class="nav-link">Users</a>
       <a href="/admin/projects/new" class="btn-sm">+ Project</a>
+      {% endif %}
+      {% if user and user.provider != 'basic' %}
+      <span class="nav-user" title="{{ user.email or '' }}">{{ user.display }}{% if user.is_admin %} · admin{% endif %}</span>
+      <a href="/logout" class="nav-link">Logout</a>
+      {% endif %}
     </div>
   </nav>
   <main>

@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Users — notify-proxy{% endblock %}
+{% block content %}
+<h1>Users</h1>
+<p class="hint" style="margin-bottom:20px">A successful OAuth login does not grant access — users start as <strong>pending</strong> until approved here.</p>
+
+{% if users %}
+<table>
+  <thead>
+    <tr><th>User</th><th>Provider</th><th>Role</th><th>Status</th><th>Last login</th><th>Actions</th></tr>
+  </thead>
+  <tbody>
+  {% for u in users %}
+    <tr>
+      <td>{{ u.display }}{% if u.email %}<br><span class="hint">{{ u.email }}</span>{% endif %}</td>
+      <td><span class="badge">{{ u.provider }}</span></td>
+      <td>{% if u.role == 'admin' %}<span class="badge badge-default">admin</span>{% else %}<span class="text-muted">user</span>{% endif %}</td>
+      <td>
+        {% if u.status == 'approved' %}<span class="badge" style="background:#162416;color:var(--ok)">approved</span>
+        {% elif u.status == 'blocked' %}<span class="badge badge-warn">blocked</span>
+        {% else %}<span class="badge badge-warn">pending</span>{% endif %}
+      </td>
+      <td class="hint">{{ u.last_login.strftime('%Y-%m-%d %H:%M') if u.last_login else '—' }}</td>
+      <td style="white-space:nowrap;display:flex;gap:4px;flex-wrap:wrap">
+        {% if u.id == me.id %}
+          <span class="hint">(you)</span>
+        {% else %}
+          {% if u.status != 'approved' %}
+          <form method="post" action="/admin/users/{{ u.id }}/approve"><button class="btn-sm">Approve</button></form>
+          {% endif %}
+          {% if u.status != 'blocked' %}
+          <form method="post" action="/admin/users/{{ u.id }}/block"><button class="btn-sm">Block</button></form>
+          {% endif %}
+          {% if u.role != 'admin' %}
+          <form method="post" action="/admin/users/{{ u.id }}/promote"><button class="btn-sm">Make admin</button></form>
+          {% else %}
+          <form method="post" action="/admin/users/{{ u.id }}/demote"><button class="btn-sm">Revoke admin</button></form>
+          {% endif %}
+          <form method="post" action="/admin/users/{{ u.id }}/delete" onsubmit="return confirm('Delete {{ u.display }}?')"><button class="btn-danger-sm">Delete</button></form>
+        {% endif %}
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="empty">No users yet — they appear here after their first login.</p>
+{% endif %}
+{% endblock %}

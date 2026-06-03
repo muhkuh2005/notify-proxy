@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}Awaiting approval — notify-proxy{% endblock %}
+{% block content %}
+<div class="card" style="max-width:480px;margin:60px auto;text-align:center">
+  <h1>⏳ Awaiting approval</h1>
+  <p>Hi {{ user.display }} — your account is registered, but an administrator
+     has to approve it before you can access notify-proxy.</p>
+  {% if user.email %}<p class="hint">{{ user.email }}</p>{% endif %}
+  <a href="/logout" class="btn-sm" style="margin-top:16px">Logout</a>
+</div>
+{% endblock %}

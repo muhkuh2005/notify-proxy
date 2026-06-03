@@ -214,6 +214,7 @@ input:focus, select:focus { border-color: var(--accent); }
 .badge.telegram { background: #1a2b3a; color: #4fa8e0; }
 .badge.ntfy { background: #1a2a1a; color: #5cb85c; }
 .badge.mattermost { background: #21193a; color: #8b9bff; }
+.nav-user { color: var(--text-muted); font-size: 13px; margin-left: 8px; }
 
 .flash.ok {
   background: #162416;

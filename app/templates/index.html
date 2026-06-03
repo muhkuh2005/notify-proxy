@@ -3,7 +3,7 @@
 {% block content %}
 <h1>Projects</h1>
 
-{% if coolify_incoming_token %}
+{% if coolify_incoming_token and user.is_admin %}
 <div class="info-box">
   <strong>Coolify Webhook URL</strong><br>
   Configure in Coolify → Team Settings → Notifications → Webhook:<br>
@@ -18,11 +18,13 @@
 {% endif %}
 
 <div class="toolbar">
+  {% if user.is_admin %}
   <a href="/admin/projects/new" class="btn">+ New Project</a>
   {% if coolify_sync_enabled %}
   <form method="post" action="/admin/sync-coolify" style="display:inline">
     <button type="submit" class="btn btn-secondary">↻ Sync from Coolify</button>
   </form>
+  {% endif %}
   {% endif %}
   <input type="text" id="name-filter" placeholder="Filter by name…"
          oninput="applyFilter()"
@@ -59,8 +61,10 @@
         {% else %}<span style="color:var(--text-muted);font-size:12px">all</span>{% endif %}
       </td>
       <td>
+        {% if user.is_admin %}
         <button class="btn-sm" type="button"
                 onclick="copyText(this, '{{ request.base_url }}webhook/{{ p.token }}')">Copy URL</button>
+        {% endif %}
       </td>
       <td>
         <a href="/admin/projects/{{ p.id }}" class="btn-sm">Edit</a>

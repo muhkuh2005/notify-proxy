@@ -1,37 +1,22 @@
 import os
-import secrets
 from urllib.parse import urlparse
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
+from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
-from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session, selectinload
 
+from ..auth import can_edit, can_view, require_admin, require_user
 from ..database import get_db
-from ..models import Bot, Destination, DestinationType, FilterMode, Project
-from ..notifiers import telegram as telegram_notifier
+from ..models import Bot, Destination, DestinationType, FilterMode, Project, User
 from ..notifiers import mattermost
+from ..notifiers import telegram as telegram_notifier
 from ..services import coolify_sync, settings_store, verification
 
 router = APIRouter()
-security = HTTPBasic()
 templates = Jinja2Templates(directory=os.path.join(os.path.dirname(__file__), "..", "templates"))
 
-ADMIN_USER = os.environ.get("ADMIN_USER", "admin")
-ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "changeme")
 COOLIFY_INCOMING_TOKEN = os.environ.get("COOLIFY_INCOMING_TOKEN", "")
-
-
-def require_auth(credentials: HTTPBasicCredentials = Depends(security)):
-    ok_user = secrets.compare_digest(credentials.username.encode(), ADMIN_USER.encode())
-    ok_pass = secrets.compare_digest(credentials.password.encode(), ADMIN_PASSWORD.encode())
-    if not (ok_user and ok_pass):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            headers={"WWW-Authenticate": "Basic realm=\"notify-proxy admin\""},
-        )
-    return credentials.username
 
 
 def _safe_redirect(path: str, status_code: int = 303) -> RedirectResponse:
@@ -52,6 +37,16 @@ def _safe_redirect(path: str, status_code: int = 303) -> RedirectResponse:
     return RedirectResponse(url=path, status_code=status_code)
 
 
+def _ensure_can_edit(user: User, owner_id: int | None) -> None:
+    if not can_edit(user, owner_id):
+        raise HTTPException(status_code=403, detail="Not allowed for this resource")
+
+
+def _visible_bots(db: Session, user: User) -> list[Bot]:
+    bots = db.query(Bot).order_by(Bot.name).all()
+    return [b for b in bots if can_view(user, b.owner_id, b.visibility)]
+
+
 @router.get("/", response_class=RedirectResponse)
 def root():
     return _safe_redirect("/admin")
@@ -63,7 +58,7 @@ def root():
 def admin_index(
     request: Request,
     db: Session = Depends(get_db),
-    _: str = Depends(require_auth),
+    user: User = Depends(require_user),
 ):
     projects = (
         db.query(Project)
@@ -75,15 +70,17 @@ def admin_index(
         "projects": projects,
         "coolify_sync_enabled": coolify_sync.is_configured(),
         "coolify_incoming_token": COOLIFY_INCOMING_TOKEN,
+        "user": user,
     })
 
 
 @router.get("/admin/projects/new", response_class=HTMLResponse)
-def project_new(request: Request, _: str = Depends(require_auth)):
+def project_new(request: Request, user: User = Depends(require_admin)):
     return templates.TemplateResponse(request, "project_edit.html", {
         "project": None,
         "destinations": [],
         "bots": [],
+        "user": user,
     })
 
 
@@ -91,7 +88,7 @@ def project_new(request: Request, _: str = Depends(require_auth)):
 def project_create(
     name: str = Form(...),
     db: Session = Depends(get_db),
-    _: str = Depends(require_auth),
+    user: User = Depends(require_admin),
 ):
     if db.query(Project).filter(Project.name == name).first():
         raise HTTPException(status_code=400, detail="name already exists")
@@ -107,17 +104,20 @@ def project_edit(
     project_id: int,
     saved: str | None = None,
     db: Session = Depends(get_db),
-    _: str = Depends(require_auth),
+    user: User = Depends(require_user),
 ):
     p = db.query(Project).filter(Project.id == project_id).first()
     if not p:
         raise HTTPException(status_code=404)
-    bots = db.query(Bot).order_by(Bot.name).all()
+    dests = [d for d in p.destinations if can_view(user, d.owner_id, d.visibility)]
+    for d in dests:
+        d.editable = can_edit(user, d.owner_id)
     return templates.TemplateResponse(request, "project_edit.html", {
         "project": p,
-        "destinations": p.destinations,
-        "bots": bots,
+        "destinations": dests,
+        "bots": _visible_bots(db, user),
         "saved": saved,
+        "user": user,
     })
 
 
@@ -129,7 +129,7 @@ async def destination_add(
     ntfy_topic: str = Form(""),
     mattermost_target: str = Form(""),
     db: Session = Depends(get_db),
-    _: str = Depends(require_auth),
+    user: User = Depends(require_user),
 ):
     p = db.query(Project).filter(Project.id == project_id).first()
     if not p:
@@ -137,6 +137,9 @@ async def destination_add(
     bot = db.query(Bot).filter(Bot.id == bot_id).first()
     if not bot:
         raise HTTPException(status_code=400, detail="bot not found")
+    # May only attach bots you are allowed to use (own or global; admin: any).
+    if not can_view(user, bot.owner_id, bot.visibility):
+        raise HTTPException(status_code=403, detail="Not allowed to use this bot")
 
     if bot.type == DestinationType.telegram and not telegram_chat_id.strip():
         raise HTTPException(status_code=400, detail="telegram_chat_id required for Telegram bot")
@@ -176,6 +179,7 @@ async def destination_add(
                     telegram_chat_id=None,
                     telegram_chat_label=chat_id,
                     enabled=False,
+                    owner_id=user.id,
                 )
                 db.add(dest)
                 db.commit()
@@ -203,6 +207,7 @@ async def destination_add(
         ntfy_topic=ntfy_topic.strip() or None,
         mattermost_target=mattermost_target.strip() or None,
         mattermost_channel_id=mm_channel_id,
+        owner_id=user.id,
     )
     db.add(dest)
     db.commit()
@@ -223,17 +228,36 @@ async def destination_add(
     return _safe_redirect(f"/admin/projects/{project_id}?saved=1")
 
 
+def _dest_for_edit(db: Session, dest_id: int, user: User) -> Destination:
+    dest = db.query(Destination).filter(Destination.id == dest_id).first()
+    if not dest:
+        raise HTTPException(status_code=404)
+    _ensure_can_edit(user, dest.owner_id)
+    return dest
+
+
 @router.post("/admin/destinations/{dest_id}/filter")
 def destination_set_filter(
     dest_id: int,
     filter_mode: str = Form(...),
     db: Session = Depends(get_db),
-    _: str = Depends(require_auth),
+    user: User = Depends(require_user),
 ):
-    dest = db.query(Destination).filter(Destination.id == dest_id).first()
-    if not dest:
-        raise HTTPException(status_code=404)
+    dest = _dest_for_edit(db, dest_id, user)
     dest.filter_mode = FilterMode(filter_mode) if filter_mode != "inherit" else None
+    db.commit()
+    return _safe_redirect(f"/admin/projects/{dest.project_id}")
+
+
+@router.post("/admin/destinations/{dest_id}/visibility")
+def destination_set_visibility(
+    dest_id: int,
+    visibility: str = Form(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+):
+    dest = _dest_for_edit(db, dest_id, user)
+    dest.visibility = "global" if visibility == "global" else "private"
     db.commit()
     return _safe_redirect(f"/admin/projects/{dest.project_id}")
 
@@ -242,11 +266,9 @@ def destination_set_filter(
 async def destination_toggle(
     dest_id: int,
     db: Session = Depends(get_db),
-    _: str = Depends(require_auth),
+    user: User = Depends(require_user),
 ):
-    dest = db.query(Destination).filter(Destination.id == dest_id).first()
-    if not dest:
-        raise HTTPException(status_code=404)
+    dest = _dest_for_edit(db, dest_id, user)
     was_enabled = dest.enabled
     dest.enabled = not dest.enabled
     db.commit()
@@ -260,11 +282,9 @@ async def destination_toggle(
 def destination_delete(
     dest_id: int,
     db: Session = Depends(get_db),
-    _: str = Depends(require_auth),
+    user: User = Depends(require_user),
 ):
-    dest = db.query(Destination).filter(Destination.id == dest_id).first()
-    if not dest:
-        raise HTTPException(status_code=404)
+    dest = _dest_for_edit(db, dest_id, user)
     pid = dest.project_id
     db.delete(dest)
     db.commit()
@@ -275,7 +295,7 @@ def destination_delete(
 def project_delete(
     project_id: int,
     db: Session = Depends(get_db),
-    _: str = Depends(require_auth),
+    user: User = Depends(require_admin),
 ):
     p = db.query(Project).filter(Project.id == project_id).first()
     if not p:
@@ -290,7 +310,7 @@ def project_set_filter(
     project_id: int,
     filter_mode: str = Form(...),
     db: Session = Depends(get_db),
-    _: str = Depends(require_auth),
+    user: User = Depends(require_admin),
 ):
     p = db.query(Project).filter(Project.id == project_id).first()
     if not p:
@@ -307,7 +327,7 @@ def project_set_filter(
 def project_set_default(
     project_id: int,
     db: Session = Depends(get_db),
-    _: str = Depends(require_auth),
+    user: User = Depends(require_admin),
 ):
     p = db.query(Project).filter(Project.id == project_id).first()
     if not p:
@@ -323,7 +343,7 @@ def project_set_default(
 def project_unset_default(
     project_id: int,
     db: Session = Depends(get_db),
-    _: str = Depends(require_auth),
+    user: User = Depends(require_admin),
 ):
     p = db.query(Project).filter(Project.id == project_id).first()
     if not p:
@@ -336,7 +356,7 @@ def project_unset_default(
 @router.post("/admin/sync-coolify")
 async def sync_coolify(
     db: Session = Depends(get_db),
-    _: str = Depends(require_auth),
+    user: User = Depends(require_admin),
 ):
     if not coolify_sync.is_configured():
         raise HTTPException(status_code=400, detail="COOLIFY_BASE_URL or COOLIFY_TOKEN not configured")
@@ -363,11 +383,9 @@ async def _test_and_redirect(db: Session, dest: Destination, bot_token: str, bas
 async def destination_test(
     dest_id: int,
     db: Session = Depends(get_db),
-    _: str = Depends(require_auth),
+    user: User = Depends(require_user),
 ):
-    dest = db.query(Destination).filter(Destination.id == dest_id).first()
-    if not dest:
-        raise HTTPException(status_code=404)
+    dest = _dest_for_edit(db, dest_id, user)
     if not dest.bot or not dest.bot.telegram_bot_token or not dest.telegram_chat_id:
         raise HTTPException(status_code=400, detail="no bot or chat_id")
     return await _test_and_redirect(db, dest, dest.bot.telegram_bot_token, f"/admin/projects/{dest.project_id}")
@@ -379,7 +397,7 @@ async def destination_test(
 async def settings_page(
     request: Request,
     db: Session = Depends(get_db),
-    _: str = Depends(require_auth),
+    user: User = Depends(require_admin),
 ):
     vbot_token = settings_store.get_setting(db, "verification_bot_token")
     bot_info = None
@@ -389,6 +407,7 @@ async def settings_page(
         "vbot_token_set": bool(vbot_token),
         "bot_info": bot_info,
         "saved": request.query_params.get("saved"),
+        "user": user,
     })
 
 
@@ -396,7 +415,7 @@ async def settings_page(
 def settings_save(
     verification_bot_token: str = Form(""),
     db: Session = Depends(get_db),
-    _: str = Depends(require_auth),
+    user: User = Depends(require_admin),
 ):
     token = verification_bot_token.strip()
     if token:
@@ -407,7 +426,7 @@ def settings_save(
 @router.post("/admin/settings/clear-verification-bot")
 def settings_clear_vbot(
     db: Session = Depends(get_db),
-    _: str = Depends(require_auth),
+    user: User = Depends(require_admin),
 ):
     settings_store.delete_setting(db, "verification_bot_token")
     return _safe_redirect("/admin/settings?saved=1")
@@ -419,15 +438,17 @@ def settings_clear_vbot(
 def bots_list(
     request: Request,
     db: Session = Depends(get_db),
-    _: str = Depends(require_auth),
+    user: User = Depends(require_user),
 ):
-    bots = db.query(Bot).order_by(Bot.name).all()
-    return templates.TemplateResponse(request, "bots.html", {"bots": bots})
+    bots = _visible_bots(db, user)
+    for b in bots:
+        b.editable = can_edit(user, b.owner_id)
+    return templates.TemplateResponse(request, "bots.html", {"bots": bots, "user": user})
 
 
 @router.get("/admin/bots/new", response_class=HTMLResponse)
-def bot_new(request: Request, _: str = Depends(require_auth)):
-    return templates.TemplateResponse(request, "bot_edit.html", {"bot": None})
+def bot_new(request: Request, user: User = Depends(require_user)):
+    return templates.TemplateResponse(request, "bot_edit.html", {"bot": None, "user": user})
 
 
 @router.post("/admin/bots/new")
@@ -441,7 +462,7 @@ def bot_create(
     mattermost_token: str = Form(""),
     mattermost_team: str = Form(""),
     db: Session = Depends(get_db),
-    _: str = Depends(require_auth),
+    user: User = Depends(require_user),
 ):
     try:
         dtype = DestinationType(bot_type)
@@ -458,10 +479,19 @@ def bot_create(
         mattermost_url=mattermost_url or None,
         mattermost_token=mattermost_token or None,
         mattermost_team=mattermost_team or None,
+        owner_id=user.id,
     )
     db.add(bot)
     db.commit()
     return _safe_redirect("/admin/bots")
+
+
+def _bot_for_edit(db: Session, bot_id: int, user: User) -> Bot:
+    bot = db.query(Bot).filter(Bot.id == bot_id).first()
+    if not bot:
+        raise HTTPException(status_code=404)
+    _ensure_can_edit(user, bot.owner_id)
+    return bot
 
 
 @router.get("/admin/bots/{bot_id}", response_class=HTMLResponse)
@@ -469,12 +499,10 @@ def bot_edit_page(
     request: Request,
     bot_id: int,
     db: Session = Depends(get_db),
-    _: str = Depends(require_auth),
+    user: User = Depends(require_user),
 ):
-    bot = db.query(Bot).filter(Bot.id == bot_id).first()
-    if not bot:
-        raise HTTPException(status_code=404)
-    return templates.TemplateResponse(request, "bot_edit.html", {"bot": bot})
+    bot = _bot_for_edit(db, bot_id, user)
+    return templates.TemplateResponse(request, "bot_edit.html", {"bot": bot, "user": user})
 
 
 @router.post("/admin/bots/{bot_id}")
@@ -488,11 +516,9 @@ def bot_update(
     mattermost_token: str = Form(""),
     mattermost_team: str = Form(""),
     db: Session = Depends(get_db),
-    _: str = Depends(require_auth),
+    user: User = Depends(require_user),
 ):
-    bot = db.query(Bot).filter(Bot.id == bot_id).first()
-    if not bot:
-        raise HTTPException(status_code=404)
+    bot = _bot_for_edit(db, bot_id, user)
     bot.name = name
     if bot.type == DestinationType.telegram:
         bot.telegram_bot_token = telegram_bot_token or bot.telegram_bot_token
@@ -509,15 +535,26 @@ def bot_update(
     return _safe_redirect("/admin/bots")
 
 
+@router.post("/admin/bots/{bot_id}/visibility")
+def bot_set_visibility(
+    bot_id: int,
+    visibility: str = Form(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+):
+    bot = _bot_for_edit(db, bot_id, user)
+    bot.visibility = "global" if visibility == "global" else "private"
+    db.commit()
+    return _safe_redirect("/admin/bots")
+
+
 @router.post("/admin/bots/{bot_id}/delete")
 def bot_delete(
     bot_id: int,
     db: Session = Depends(get_db),
-    _: str = Depends(require_auth),
+    user: User = Depends(require_user),
 ):
-    bot = db.query(Bot).filter(Bot.id == bot_id).first()
-    if not bot:
-        raise HTTPException(status_code=404)
+    bot = _bot_for_edit(db, bot_id, user)
     db.delete(bot)
     db.commit()
     return _safe_redirect("/admin/bots")
@@ -532,11 +569,9 @@ async def destination_verify_page(
     code: str,
     not_found: str | None = None,
     db: Session = Depends(get_db),
-    _: str = Depends(require_auth),
+    user: User = Depends(require_user),
 ):
-    dest = db.query(Destination).filter(Destination.id == dest_id).first()
-    if not dest:
-        raise HTTPException(status_code=404)
+    dest = _dest_for_edit(db, dest_id, user)
     bot_info = None
     vbot_token = settings_store.get_setting(db, "verification_bot_token")
     if vbot_token:
@@ -546,6 +581,7 @@ async def destination_verify_page(
         "code": code,
         "bot_info": bot_info,
         "not_found": bool(not_found),
+        "user": user,
     })
 
 
@@ -553,11 +589,9 @@ async def destination_verify_page(
 def destination_verify_start(
     dest_id: int,
     db: Session = Depends(get_db),
-    _: str = Depends(require_auth),
+    user: User = Depends(require_user),
 ):
-    dest = db.query(Destination).filter(Destination.id == dest_id).first()
-    if not dest:
-        raise HTTPException(status_code=404)
+    dest = _dest_for_edit(db, dest_id, user)
     if not settings_store.get_setting(db, "verification_bot_token"):
         raise HTTPException(status_code=400, detail="Verification bot not configured — go to Settings")
     existing = verification.get_by_dest(dest_id)
@@ -570,11 +604,9 @@ async def destination_verify_poll(
     dest_id: int,
     code: str = Form(...),
     db: Session = Depends(get_db),
-    _: str = Depends(require_auth),
+    user: User = Depends(require_user),
 ):
-    dest = db.query(Destination).filter(Destination.id == dest_id).first()
-    if not dest:
-        raise HTTPException(status_code=404)
+    dest = _dest_for_edit(db, dest_id, user)
 
     entry = verification.get_by_dest(dest_id)
     if not entry or entry[0] != code:

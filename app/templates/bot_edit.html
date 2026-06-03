@@ -40,6 +40,11 @@
 
     <button type="submit" class="btn">Save</button>
   </form>
+  <form method="post" action="/admin/bots/{{ bot.id }}/visibility" style="margin-top:12px;flex-direction:row;align-items:center;gap:10px">
+    <input type="hidden" name="visibility" value="{{ 'private' if bot.visibility == 'global' else 'global' }}">
+    <button type="submit" class="btn-secondary btn-sm">{{ 'Make private' if bot.visibility == 'global' else 'Make global (shared)' }}</button>
+    <span class="hint">Visibility: <strong>{{ bot.visibility }}</strong> — global bots can be used by any approved user.</span>
+  </form>
 </section>
 
 <section class="card danger-zone">

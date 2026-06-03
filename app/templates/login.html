@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Sign in — notify-proxy{% endblock %}
+{% block content %}
+<div class="card" style="max-width:420px;margin:60px auto;text-align:center">
+  <h1>Sign in</h1>
+  {% if request.query_params.get("error") == "blocked" %}
+  <p class="flash badge-warn" style="padding:10px;border-radius:6px">Your account is blocked. Contact an administrator.</p>
+  {% elif request.query_params.get("error") %}
+  <p class="flash badge-warn" style="padding:10px;border-radius:6px">Login failed. Please try again.</p>
+  {% endif %}
+  <p class="hint">Sign in to access the notify-proxy admin.</p>
+  <div style="display:flex;flex-direction:column;gap:10px;margin-top:20px">
+    {% for p in providers %}
+    <a href="/auth/{{ p }}/login" class="btn">Continue with {{ p|capitalize }}</a>
+    {% else %}
+    <p class="empty">No login providers configured.</p>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

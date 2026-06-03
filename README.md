@@ -11,7 +11,7 @@ Point Coolify's notification webhook at one URL, then fan events out to whicheve
 - **Multiple notifiers** — Telegram bots, ntfy topics, and Mattermost (REST API v4; DMs via `@user` or channels by name); credentials are stored once per *bot* and reused across destinations.
 - **Filtering** — `all`, `errors_only`, or `off`, configurable per project and overridable per destination.
 - **Telegram chat-ID verification** — resolve `@usernames` to chat IDs and verify private chats via a dedicated verification bot.
-- **Admin UI** — HTTP Basic Auth, manage everything from the browser; sync projects directly from the Coolify API.
+- **Admin UI** — HTTP Basic Auth, or **OAuth login** (GitHub / Microsoft365) with admin approval and per-resource ownership; sync projects directly from the Coolify API.
 
 ## Quick start
 
@@ -40,6 +40,34 @@ All configuration is via environment variables:
 | `COOLIFY_INCOMING_TOKEN` | no | — | Shared token Coolify must include in the webhook URL |
 | `VERIFICATION_BOT_TOKEN` | no | — | Telegram bot used for chat-ID verification (also settable in the Settings UI) |
 | `NOTIFY_PROXY_IMAGE` | no | `ghcr.io/your-org/notify-proxy:main` | Image reference used by `docker-compose.yaml` |
+| `OAUTH_ENABLED_PROVIDERS` | no | — | Comma list of `github,microsoft`. When set, OAuth replaces Basic Auth |
+| `SESSION_SECRET` | with OAuth | — | Long random string signing the session cookie (required in OAuth mode) |
+| `BASE_URL` | with OAuth | — | Public URL; OAuth redirect = `{BASE_URL}/auth/{provider}/callback` |
+| `OAUTH_ADMIN_EMAILS` | no | — | Emails auto-promoted to admin; if empty, the **first** login becomes admin |
+| `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` | for GitHub | — | GitHub OAuth app credentials |
+| `MICROSOFT_CLIENT_ID` / `MICROSOFT_CLIENT_SECRET` | for MS | — | Entra/Azure AD app credentials |
+| `MICROSOFT_TENANT` | no | `common` | Tenant id, or `common` / `organizations` |
+
+## Authentication
+
+Two modes, selected automatically:
+
+- **Basic Auth** (default): single admin via `ADMIN_USER` / `ADMIN_PASSWORD`.
+- **OAuth** (when `OAUTH_ENABLED_PROVIDERS` is set): users sign in with GitHub or
+  Microsoft365. **A successful login does not grant access** — new users land in a
+  *pending* state until an admin approves them. Admins can approve/block/promote
+  users under **Users**.
+
+  Bootstrapping the first admin: any email in `OAUTH_ADMIN_EMAILS` becomes
+  admin+approved on login. If that list is empty, the **first** user to log in
+  becomes admin — so with public providers (e.g. GitHub), **always set
+  `OAUTH_ADMIN_EMAILS`** to avoid a stranger claiming admin first.
+
+  Each OAuth user owns the bots/destinations they create (`private` by default).
+  Marking a resource `global` lets other approved users *use* it (and, for bots,
+  send through its token); editing stays with the owner. Admins can do everything.
+
+  Register the OAuth app's redirect URI as `{BASE_URL}/auth/<provider>/callback`.
 
 ## Endpoints
 

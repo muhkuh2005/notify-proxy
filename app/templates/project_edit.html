@@ -31,19 +31,21 @@
 </div>
 {% endif %}
 
+{% if user.is_admin %}
 <section class="card">
   <h2>Webhook URL</h2>
   <p>Per-project direct webhook (alternative to the global Coolify router):</p>
   <code class="block">{{ request.base_url }}webhook/{{ project.token }}</code>
   <p class="hint">Keep this secret.</p>
 </section>
+{% endif %}
 
 <section class="card">
   <h2>Destinations</h2>
   {% if destinations %}
   <table>
     <thead>
-      <tr><th>Bot</th><th>Type</th><th>Target</th><th>Filter</th><th>Enabled</th><th></th></tr>
+      <tr><th>Bot</th><th>Type</th><th>Target</th><th>Visibility</th><th>Filter</th><th>Enabled</th><th></th></tr>
     </thead>
     <tbody>
     {% for d in destinations %}
@@ -62,7 +64,7 @@
               <code>{{ d.telegram_chat_label or d.telegram_chat_id }}</code>
             {% else %}
               <code>{{ d.telegram_chat_label }}</code>
-              <a href="/admin/destinations/{{ d.id }}/verify-start" class="badge badge-warn" style="margin-left:6px">⏳ verifizieren</a>
+              {% if d.editable %}<a href="/admin/destinations/{{ d.id }}/verify-start" class="badge badge-warn" style="margin-left:6px">⏳ verifizieren</a>{% endif %}
             {% endif %}
           {% elif d.type == "ntfy" %}
             <code>{{ d.ntfy_topic }}</code>
@@ -71,6 +73,17 @@
           {% endif %}
         </td>
         <td>
+          {% if d.editable %}
+          <form method="post" action="/admin/destinations/{{ d.id }}/visibility" style="display:inline">
+            <input type="hidden" name="visibility" value="{{ 'private' if d.visibility == 'global' else 'global' }}">
+            <button type="submit" class="badge {{ 'badge-default' if d.visibility == 'global' else 'badge-muted' }}" style="border:none;cursor:pointer" title="Click to toggle">{{ d.visibility }}</button>
+          </form>
+          {% else %}
+          <span class="badge {{ 'badge-default' if d.visibility == 'global' else 'badge-muted' }}">{{ d.visibility }}</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if d.editable %}
           <form method="post" action="/admin/destinations/{{ d.id }}/filter" style="display:inline">
             <select name="filter_mode" onchange="this.form.submit()" style="min-width:120px;width:auto;font-size:12px;padding:4px 8px">
               <option value="inherit" {% if d.filter_mode is none %}selected{% endif %}>— (project default)</option>
@@ -79,14 +92,21 @@
               <option value="off" {% if d.filter_mode and d.filter_mode.value == 'off' %}selected{% endif %}>Off</option>
             </select>
           </form>
+          {% else %}
+            <span class="hint">{{ d.filter_mode.value if d.filter_mode else 'project default' }}</span>
+          {% endif %}
         </td>
         <td style="white-space:nowrap">
+          {% if d.editable %}
           <form method="post" action="/admin/destinations/{{ d.id }}/toggle" style="display:inline">
             <button type="submit" class="btn-toggle {% if d.enabled %}on{% else %}off{% endif %}">
               {{ "on" if d.enabled else "off" }}
             </button>
           </form>
-          {% if d.last_test_ok == false %}
+          {% else %}
+            <span class="btn-toggle {% if d.enabled %}on{% else %}off{% endif %}" style="opacity:.6">{{ "on" if d.enabled else "off" }}</span>
+          {% endif %}
+          {% if d.last_test_ok == false and d.editable %}
           <form method="post" action="/admin/destinations/{{ d.id }}/test" style="display:inline;margin-left:4px">
             <button type="submit" class="badge badge-warn" style="border:none;cursor:pointer" title="Test fehlgeschlagen — klicken zum Retry">⚠ failed</button>
           </form>
@@ -95,10 +115,12 @@
           {% endif %}
         </td>
         <td>
+          {% if d.editable %}
           <form method="post" action="/admin/destinations/{{ d.id }}/delete"
                 onsubmit="return confirm('Delete this destination?')">
             <button type="submit" class="btn-danger-sm">Delete</button>
           </form>
+          {% endif %}
         </td>
       </tr>
     {% endfor %}
@@ -158,10 +180,11 @@
   })();
   </script>
   {% else %}
-  <p class="empty">No bots configured yet. <a href="/admin/bots/new">Create a bot first.</a></p>
+  <p class="empty">No bots available to you yet. <a href="/admin/bots/new">Create a bot first.</a></p>
   {% endif %}
 </section>
 
+{% if user.is_admin %}
 <section class="card">
   <h2>Notification Filter</h2>
   <form method="post" action="/admin/projects/{{ project.id }}/filter" style="flex-direction:row;align-items:center;gap:12px">
@@ -198,6 +221,7 @@
     <button type="submit" class="btn-danger">Delete Project</button>
   </form>
 </section>
+{% endif %}
 
 {% else %}
 <div class="breadcrumb"><a href="/admin">Projects</a> / New</div>
