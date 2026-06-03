@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from ..database import get_db
 from ..models import Destination, DestinationType, FilterMode, Project
-from ..notifiers import telegram, ntfy
+from ..notifiers import telegram, ntfy, mattermost
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -129,6 +129,15 @@ def _strip_html(text: str) -> str:
     return re.sub(r"<[^>]+>", "", text)
 
 
+def _to_markdown(text: str) -> str:
+    """Convert the internal HTML-ish body to Markdown (for Mattermost)."""
+    import re
+    text = text.replace("<b>", "**").replace("</b>", "**")
+    text = text.replace("<code>", "`").replace("</code>", "`")
+    text = re.sub(r'<a href="([^"]*)">([^<]*)</a>', r"[\2](\1)", text)
+    return re.sub(r"<[^>]+>", "", text)
+
+
 async def _dispatch(project: Project, payload: dict, db: Session) -> list[dict]:
     title, body = _format_message(payload)
     is_err = _is_error(payload)
@@ -150,6 +159,12 @@ async def _dispatch(project: Project, payload: dict, db: Session) -> list[dict]:
         elif bot and dest.type == DestinationType.ntfy:
             if bot.ntfy_url and dest.ntfy_topic:
                 ok = await ntfy.send(bot.ntfy_url, dest.ntfy_topic, title, _strip_html(body), bot.ntfy_token)
+        elif bot and dest.type == DestinationType.mattermost:
+            if bot.mattermost_url and bot.mattermost_token and dest.mattermost_channel_id:
+                ok = await mattermost.send(
+                    bot.mattermost_url, bot.mattermost_token,
+                    dest.mattermost_channel_id, _to_markdown(body),
+                )
         # Legacy fallback: inline credentials on destination
         elif dest.type == DestinationType.telegram and dest.telegram_bot_token and dest.telegram_chat_id:
             ok = await telegram.send(dest.telegram_bot_token, dest.telegram_chat_id, body)

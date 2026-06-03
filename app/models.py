@@ -11,6 +11,7 @@ from .database import Base
 class DestinationType(str, PyEnum):
     telegram = "telegram"
     ntfy = "ntfy"
+    mattermost = "mattermost"
 
     def __str__(self) -> str:
         return self.value
@@ -44,6 +45,11 @@ class Bot(Base):
     # ntfy
     ntfy_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     ntfy_token: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Mattermost (REST API v4 — personal access or bot-account token)
+    mattermost_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    mattermost_token: Mapped[str | None] = mapped_column(Text, nullable=True)
+    mattermost_team: Mapped[str | None] = mapped_column(Text, nullable=True)  # team slug for channel lookups
 
     destinations: Mapped[list["Destination"]] = relationship(back_populates="bot")
 
@@ -80,6 +86,8 @@ class Destination(Base):
     telegram_chat_id: Mapped[str | None] = mapped_column(Text, nullable=True)
     telegram_chat_label: Mapped[str | None] = mapped_column(Text, nullable=True)  # original @username input
     ntfy_topic: Mapped[str | None] = mapped_column(Text, nullable=True)
+    mattermost_target: Mapped[str | None] = mapped_column(Text, nullable=True)  # @user / channel / raw id input
+    mattermost_channel_id: Mapped[str | None] = mapped_column(Text, nullable=True)  # resolved & cached channel_id
 
     # Legacy inline credentials (kept for backwards compat, not used by new UI)
     telegram_bot_token: Mapped[str | None] = mapped_column(Text, nullable=True)

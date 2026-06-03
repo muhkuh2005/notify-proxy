@@ -44,6 +44,11 @@ with engine.connect() as _conn:
         "ALTER TABLE destinations ADD COLUMN telegram_chat_label TEXT",
         "ALTER TABLE destinations ADD COLUMN filter_mode TEXT",
         "ALTER TABLE destinations ADD COLUMN last_test_ok INTEGER",
+        "ALTER TABLE bots ADD COLUMN mattermost_url TEXT",
+        "ALTER TABLE bots ADD COLUMN mattermost_token TEXT",
+        "ALTER TABLE bots ADD COLUMN mattermost_team TEXT",
+        "ALTER TABLE destinations ADD COLUMN mattermost_target TEXT",
+        "ALTER TABLE destinations ADD COLUMN mattermost_channel_id TEXT",
     ]:
         try:
             _conn.execute(text(_stmt))

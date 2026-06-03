@@ -36,3 +36,42 @@ def test_admin_requires_auth():
 def test_admin_accepts_valid_basic_auth():
     resp = client.get("/admin", auth=("admin", "test-password"))
     assert resp.status_code == 200
+
+
+AUTH = ("admin", "test-password")
+
+
+def test_new_bot_page_offers_mattermost():
+    page = client.get("/admin/bots/new", auth=AUTH)
+    assert page.status_code == 200
+    assert 'value="mattermost"' in page.text
+
+
+def test_create_and_edit_mattermost_bot_renders():
+    r = client.post(
+        "/admin/bots/new",
+        auth=AUTH,
+        data={
+            "name": "mm-test",
+            "bot_type": "mattermost",
+            "mattermost_url": "https://mm.example.com",
+            "mattermost_token": "tok",
+            "mattermost_team": "team",
+        },
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    assert client.get("/admin/bots", auth=AUTH).status_code == 200
+    # the bot's edit page must render the mattermost branch
+    bots = client.get("/admin/bots", auth=AUTH).text
+    assert "mm-test" in bots
+
+
+def test_project_edit_renders_mattermost_target_form():
+    r = client.post(
+        "/admin/projects/new", auth=AUTH, data={"name": "p-mm"}, follow_redirects=False
+    )
+    assert r.status_code == 303
+    page = client.get(r.headers["location"], auth=AUTH)
+    assert page.status_code == 200
+    assert "target-mattermost" in page.text

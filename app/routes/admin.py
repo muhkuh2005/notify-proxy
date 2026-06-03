@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session, selectinload
 from ..database import get_db
 from ..models import Bot, Destination, DestinationType, FilterMode, Project
 from ..notifiers import telegram as telegram_notifier
+from ..notifiers import mattermost
 from ..services import coolify_sync, settings_store, verification
 
 router = APIRouter()
@@ -126,6 +127,7 @@ async def destination_add(
     bot_id: int = Form(...),
     telegram_chat_id: str = Form(""),
     ntfy_topic: str = Form(""),
+    mattermost_target: str = Form(""),
     db: Session = Depends(get_db),
     _: str = Depends(require_auth),
 ):
@@ -140,6 +142,8 @@ async def destination_add(
         raise HTTPException(status_code=400, detail="telegram_chat_id required for Telegram bot")
     if bot.type == DestinationType.ntfy and not ntfy_topic.strip():
         raise HTTPException(status_code=400, detail="ntfy_topic required for ntfy bot")
+    if bot.type == DestinationType.mattermost and not mattermost_target.strip():
+        raise HTTPException(status_code=400, detail="mattermost_target required for Mattermost bot")
 
     chat_id = telegram_chat_id.strip() or None
     chat_label: str | None = None
@@ -178,6 +182,18 @@ async def destination_add(
                 code = verification.create(dest.id, chat_id)
                 return _safe_redirect(f"/admin/destinations/{dest.id}/verify?code={code}")
 
+    mm_channel_id = None
+    if bot.type == DestinationType.mattermost:
+        mm_channel_id = await mattermost.resolve_channel_id(
+            bot.mattermost_url, bot.mattermost_token,
+            mattermost_target.strip(), bot.mattermost_team,
+        )
+        if not mm_channel_id:
+            raise HTTPException(
+                status_code=400,
+                detail="Could not resolve Mattermost target — check @user/channel name, the bot's team, and token permissions.",
+            )
+
     dest = Destination(
         project_id=project_id,
         bot_id=bot_id,
@@ -185,6 +201,8 @@ async def destination_add(
         telegram_chat_id=chat_id,
         telegram_chat_label=chat_label,
         ntfy_topic=ntfy_topic.strip() or None,
+        mattermost_target=mattermost_target.strip() or None,
+        mattermost_channel_id=mm_channel_id,
     )
     db.add(dest)
     db.commit()
@@ -193,6 +211,14 @@ async def destination_add(
     if bot.type == DestinationType.telegram and bot.telegram_bot_token and dest.telegram_chat_id:
         redirect = await _test_and_redirect(db, dest, bot.telegram_bot_token, f"/admin/projects/{project_id}")
         return redirect
+
+    if bot.type == DestinationType.mattermost and dest.mattermost_channel_id:
+        ok = await mattermost.send(
+            bot.mattermost_url, bot.mattermost_token, dest.mattermost_channel_id,
+            "✅ **notify-proxy** — Destination erfolgreich eingerichtet.",
+        )
+        dest.last_test_ok = ok
+        db.commit()
 
     return _safe_redirect(f"/admin/projects/{project_id}?saved=1")
 
@@ -411,6 +437,9 @@ def bot_create(
     telegram_bot_token: str = Form(""),
     ntfy_url: str = Form(""),
     ntfy_token: str = Form(""),
+    mattermost_url: str = Form(""),
+    mattermost_token: str = Form(""),
+    mattermost_team: str = Form(""),
     db: Session = Depends(get_db),
     _: str = Depends(require_auth),
 ):
@@ -426,6 +455,9 @@ def bot_create(
         telegram_bot_token=telegram_bot_token or None,
         ntfy_url=ntfy_url or None,
         ntfy_token=ntfy_token or None,
+        mattermost_url=mattermost_url or None,
+        mattermost_token=mattermost_token or None,
+        mattermost_team=mattermost_team or None,
     )
     db.add(bot)
     db.commit()
@@ -452,6 +484,9 @@ def bot_update(
     telegram_bot_token: str = Form(""),
     ntfy_url: str = Form(""),
     ntfy_token: str = Form(""),
+    mattermost_url: str = Form(""),
+    mattermost_token: str = Form(""),
+    mattermost_team: str = Form(""),
     db: Session = Depends(get_db),
     _: str = Depends(require_auth),
 ):
@@ -461,10 +496,15 @@ def bot_update(
     bot.name = name
     if bot.type == DestinationType.telegram:
         bot.telegram_bot_token = telegram_bot_token or bot.telegram_bot_token
-    else:
+    elif bot.type == DestinationType.ntfy:
         bot.ntfy_url = ntfy_url or bot.ntfy_url
         if ntfy_token:
             bot.ntfy_token = ntfy_token
+    elif bot.type == DestinationType.mattermost:
+        bot.mattermost_url = mattermost_url or bot.mattermost_url
+        bot.mattermost_team = mattermost_team or bot.mattermost_team
+        if mattermost_token:
+            bot.mattermost_token = mattermost_token
     db.commit()
     return _safe_redirect("/admin/bots")
 

@@ -66,6 +66,8 @@
             {% endif %}
           {% elif d.type == "ntfy" %}
             <code>{{ d.ntfy_topic }}</code>
+          {% elif d.type == "mattermost" %}
+            <code>{{ d.mattermost_target }}</code>
           {% endif %}
         </td>
         <td>
@@ -132,6 +134,13 @@
       </label>
     </div>
 
+    <div id="target-mattermost" style="display:none">
+      <label>Target
+        <input type="text" name="mattermost_target" placeholder="@username or channel-name">
+      </label>
+      <p class="hint">@user → DM · name → channel (needs team on bot) · 26-char ID → direct channel</p>
+    </div>
+
     <button type="submit" class="btn">Add Destination</button>
   </form>
 
@@ -140,6 +149,7 @@
     const type = select.options[select.selectedIndex].dataset.type;
     document.getElementById('target-telegram').style.display = type === 'telegram' ? '' : 'none';
     document.getElementById('target-ntfy').style.display = type === 'ntfy' ? '' : 'none';
+    document.getElementById('target-mattermost').style.display = type === 'mattermost' ? '' : 'none';
   }
   // Run immediately (script is below the select, so it exists in DOM)
   (function() {

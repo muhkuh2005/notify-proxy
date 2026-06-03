@@ -18,13 +18,24 @@
       <input type="password" name="telegram_bot_token" placeholder="Leave blank to keep current">
     </label>
     <p class="hint">Get a token from <a href="https://t.me/BotFather" target="_blank">@BotFather</a></p>
-    {% else %}
+    {% elif bot.type == "ntfy" %}
     <label>ntfy Server URL
       <input type="url" name="ntfy_url" value="{{ bot.ntfy_url or '' }}">
     </label>
     <label>Token (optional)
       <input type="password" name="ntfy_token" placeholder="Leave blank to keep current">
     </label>
+    {% elif bot.type == "mattermost" %}
+    <label>Mattermost Server URL
+      <input type="url" name="mattermost_url" value="{{ bot.mattermost_url or '' }}" placeholder="https://mm.example.com">
+    </label>
+    <label>Team slug <span class="hint">(for channel targets)</span>
+      <input type="text" name="mattermost_team" value="{{ bot.mattermost_team or '' }}" placeholder="my-team">
+    </label>
+    <label>Access Token
+      <input type="password" name="mattermost_token" placeholder="Leave blank to keep current">
+    </label>
+    <p class="hint">Personal access token or bot-account token (sent as Bearer).</p>
     {% endif %}
 
     <button type="submit" class="btn">Save</button>
@@ -50,6 +61,7 @@
       <select name="bot_type" onchange="showBotFields(this.value)">
         <option value="telegram">Telegram</option>
         <option value="ntfy">ntfy</option>
+        <option value="mattermost">Mattermost</option>
       </select>
     </label>
 
@@ -69,6 +81,19 @@
       </label>
     </div>
 
+    <div id="fields-mattermost" style="display:none">
+      <label>Mattermost Server URL
+        <input type="url" name="mattermost_url" placeholder="https://mm.example.com">
+      </label>
+      <label>Team slug <span class="hint">(for channel targets)</span>
+        <input type="text" name="mattermost_team" placeholder="my-team">
+      </label>
+      <label>Access Token
+        <input type="password" name="mattermost_token" placeholder="personal access or bot token">
+      </label>
+      <p class="hint">Personal access token or bot-account token (sent as Bearer).</p>
+    </div>
+
     <button type="submit" class="btn">Create Bot</button>
   </form>
 </section>
@@ -77,6 +102,7 @@
 function showBotFields(type) {
   document.getElementById('fields-telegram').style.display = type === 'telegram' ? '' : 'none';
   document.getElementById('fields-ntfy').style.display = type === 'ntfy' ? '' : 'none';
+  document.getElementById('fields-mattermost').style.display = type === 'mattermost' ? '' : 'none';
 }
 </script>
 {% endif %}

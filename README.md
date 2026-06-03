@@ -1,6 +1,6 @@
 # notify-proxy
 
-A small self-hosted webhook router that turns [Coolify](https://coolify.io) (and generic) webhook events into **Telegram** and **[ntfy](https://ntfy.sh)** notifications — with a web admin UI for managing bots, projects and per-destination routing.
+A small self-hosted webhook router that turns [Coolify](https://coolify.io) (and generic) webhook events into **Telegram**, **[ntfy](https://ntfy.sh)** and **[Mattermost](https://mattermost.com)** notifications — with a web admin UI for managing bots, projects and per-destination routing.
 
 Point Coolify's notification webhook at one URL, then fan events out to whichever chats/topics you want, with per-project and per-destination filtering (all events / errors only / off).
 
@@ -8,7 +8,7 @@ Point Coolify's notification webhook at one URL, then fan events out to whicheve
 
 - **Central Coolify router** — one incoming webhook, routed to the right project by `application_uuid`, app name, or `server_uuid`, with a configurable default catch-all.
 - **Per-project direct webhooks** — each project also gets its own tokenized URL for non-Coolify sources.
-- **Multiple notifiers** — Telegram bots and ntfy topics; credentials are stored once per *bot* and reused across destinations.
+- **Multiple notifiers** — Telegram bots, ntfy topics, and Mattermost (REST API v4; DMs via `@user` or channels by name); credentials are stored once per *bot* and reused across destinations.
 - **Filtering** — `all`, `errors_only`, or `off`, configurable per project and overridable per destination.
 - **Telegram chat-ID verification** — resolve `@usernames` to chat IDs and verify private chats via a dedicated verification bot.
 - **Admin UI** — HTTP Basic Auth, manage everything from the browser; sync projects directly from the Coolify API.
