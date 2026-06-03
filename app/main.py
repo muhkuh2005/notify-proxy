@@ -6,7 +6,7 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import auth
+from . import auth, ratelimit
 from .database import Base, engine
 from .routes.admin import router as admin_router
 from .routes.auth import router as auth_router
@@ -36,6 +36,9 @@ elif os.environ.get("ADMIN_PASSWORD", "") in ("", "changeme"):
 
 
 app = FastAPI(title="notify-proxy", docs_url=None, redoc_url=None)
+
+if ratelimit.enabled():
+    app.add_middleware(ratelimit.RateLimitMiddleware)
 
 if auth.oauth_enabled():
     app.add_middleware(

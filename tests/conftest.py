@@ -11,6 +11,7 @@ os.environ.setdefault("ADMIN_USER", "admin")
 os.environ.setdefault("COOLIFY_INCOMING_TOKEN", "test-incoming-token")
 os.environ.setdefault("DATABASE_URL", "sqlite:////tmp/notify_proxy_test.db")
 os.environ.setdefault("LOG_LEVEL", "WARNING")
+os.environ.setdefault("RATELIMIT_ENABLED", "false")  # deterministic tests
 
 import pytest
 
