@@ -1,5 +1,6 @@
 import os
 import secrets
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -32,9 +33,27 @@ def require_auth(credentials: HTTPBasicCredentials = Depends(security)):
     return credentials.username
 
 
+def _safe_redirect(path: str, status_code: int = 303) -> RedirectResponse:
+    """Redirect only to a local, relative path — never an absolute/external URL.
+
+    Defense in depth: every admin redirect target is server-constructed and
+    already local, but this guarantees it regardless of future refactors.
+    """
+    parsed = urlparse(path)
+    if (
+        parsed.scheme
+        or parsed.netloc
+        or "\\" in path  # browsers normalise backslashes to slashes
+        or not path.startswith("/")
+        or path.startswith("//")
+    ):
+        path = "/admin"
+    return RedirectResponse(url=path, status_code=status_code)
+
+
 @router.get("/", response_class=RedirectResponse)
 def root():
-    return RedirectResponse(url="/admin")
+    return _safe_redirect("/admin")
 
 
 # ── Projects ──────────────────────────────────────────────────────────────────
@@ -78,7 +97,7 @@ def project_create(
     p = Project(name=name)
     db.add(p)
     db.commit()
-    return RedirectResponse(url=f"/admin/projects/{p.id}", status_code=303)
+    return _safe_redirect(f"/admin/projects/{p.id}")
 
 
 @router.get("/admin/projects/{project_id}", response_class=HTMLResponse)
@@ -157,10 +176,7 @@ async def destination_add(
                 db.add(dest)
                 db.commit()
                 code = verification.create(dest.id, chat_id)
-                return RedirectResponse(
-                    url=f"/admin/destinations/{dest.id}/verify?code={code}",
-                    status_code=303,
-                )
+                return _safe_redirect(f"/admin/destinations/{dest.id}/verify?code={code}")
 
     dest = Destination(
         project_id=project_id,
@@ -178,7 +194,7 @@ async def destination_add(
         redirect = await _test_and_redirect(db, dest, bot.telegram_bot_token, f"/admin/projects/{project_id}")
         return redirect
 
-    return RedirectResponse(url=f"/admin/projects/{project_id}?saved=1", status_code=303)
+    return _safe_redirect(f"/admin/projects/{project_id}?saved=1")
 
 
 @router.post("/admin/destinations/{dest_id}/filter")
@@ -193,7 +209,7 @@ def destination_set_filter(
         raise HTTPException(status_code=404)
     dest.filter_mode = FilterMode(filter_mode) if filter_mode != "inherit" else None
     db.commit()
-    return RedirectResponse(url=f"/admin/projects/{dest.project_id}", status_code=303)
+    return _safe_redirect(f"/admin/projects/{dest.project_id}")
 
 
 @router.post("/admin/destinations/{dest_id}/toggle")
@@ -211,7 +227,7 @@ async def destination_toggle(
     if not was_enabled and dest.enabled and dest.type == DestinationType.telegram \
             and dest.bot and dest.bot.telegram_bot_token and dest.telegram_chat_id:
         return await _test_and_redirect(db, dest, dest.bot.telegram_bot_token, f"/admin/projects/{dest.project_id}")
-    return RedirectResponse(url=f"/admin/projects/{dest.project_id}", status_code=303)
+    return _safe_redirect(f"/admin/projects/{dest.project_id}")
 
 
 @router.post("/admin/destinations/{dest_id}/delete")
@@ -226,7 +242,7 @@ def destination_delete(
     pid = dest.project_id
     db.delete(dest)
     db.commit()
-    return RedirectResponse(url=f"/admin/projects/{pid}", status_code=303)
+    return _safe_redirect(f"/admin/projects/{pid}")
 
 
 @router.post("/admin/projects/{project_id}/delete")
@@ -240,7 +256,7 @@ def project_delete(
         raise HTTPException(status_code=404)
     db.delete(p)
     db.commit()
-    return RedirectResponse(url="/admin", status_code=303)
+    return _safe_redirect("/admin")
 
 
 @router.post("/admin/projects/{project_id}/filter")
@@ -258,7 +274,7 @@ def project_set_filter(
     except ValueError:
         raise HTTPException(status_code=400, detail="invalid filter_mode")
     db.commit()
-    return RedirectResponse(url=f"/admin/projects/{project_id}?saved=1", status_code=303)
+    return _safe_redirect(f"/admin/projects/{project_id}?saved=1")
 
 
 @router.post("/admin/projects/{project_id}/set-default")
@@ -274,7 +290,7 @@ def project_set_default(
     db.query(Project).filter(Project.id != project_id).update({Project.is_default: False})
     p.is_default = True
     db.commit()
-    return RedirectResponse(url=f"/admin/projects/{project_id}?saved=1", status_code=303)
+    return _safe_redirect(f"/admin/projects/{project_id}?saved=1")
 
 
 @router.post("/admin/projects/{project_id}/unset-default")
@@ -288,7 +304,7 @@ def project_unset_default(
         raise HTTPException(status_code=404)
     p.is_default = False
     db.commit()
-    return RedirectResponse(url=f"/admin/projects/{project_id}?saved=1", status_code=303)
+    return _safe_redirect(f"/admin/projects/{project_id}?saved=1")
 
 
 @router.post("/admin/sync-coolify")
@@ -300,7 +316,7 @@ async def sync_coolify(
         raise HTTPException(status_code=400, detail="COOLIFY_BASE_URL or COOLIFY_TOKEN not configured")
     result = await coolify_sync.sync_projects(db)
     total = len(result["created"]) + len(result["updated"])
-    return RedirectResponse(url=f"/admin?synced={total}", status_code=303)
+    return _safe_redirect(f"/admin?synced={total}")
 
 
 async def _test_and_redirect(db: Session, dest: Destination, bot_token: str, base_url: str) -> RedirectResponse:
@@ -311,10 +327,10 @@ async def _test_and_redirect(db: Session, dest: Destination, bot_token: str, bas
     dest.last_test_ok = ok
     db.commit()
     if ok:
-        return RedirectResponse(url=f"{base_url}?saved=1", status_code=303)
+        return _safe_redirect(f"{base_url}?saved=1")
     bot_info = await telegram_notifier.get_me(bot_token) or {}
     bot_user = bot_info.get("username", "")
-    return RedirectResponse(url=f"{base_url}?start_bot={bot_user}&dest={dest.id}", status_code=303)
+    return _safe_redirect(f"{base_url}?start_bot={bot_user}&dest={dest.id}")
 
 
 @router.post("/admin/destinations/{dest_id}/test")
@@ -359,7 +375,7 @@ def settings_save(
     token = verification_bot_token.strip()
     if token:
         settings_store.set_setting(db, "verification_bot_token", token)
-    return RedirectResponse(url="/admin/settings?saved=1", status_code=303)
+    return _safe_redirect("/admin/settings?saved=1")
 
 
 @router.post("/admin/settings/clear-verification-bot")
@@ -368,7 +384,7 @@ def settings_clear_vbot(
     _: str = Depends(require_auth),
 ):
     settings_store.delete_setting(db, "verification_bot_token")
-    return RedirectResponse(url="/admin/settings?saved=1", status_code=303)
+    return _safe_redirect("/admin/settings?saved=1")
 
 
 # ── Bots ──────────────────────────────────────────────────────────────────────
@@ -413,7 +429,7 @@ def bot_create(
     )
     db.add(bot)
     db.commit()
-    return RedirectResponse(url="/admin/bots", status_code=303)
+    return _safe_redirect("/admin/bots")
 
 
 @router.get("/admin/bots/{bot_id}", response_class=HTMLResponse)
@@ -450,7 +466,7 @@ def bot_update(
         if ntfy_token:
             bot.ntfy_token = ntfy_token
     db.commit()
-    return RedirectResponse(url="/admin/bots", status_code=303)
+    return _safe_redirect("/admin/bots")
 
 
 @router.post("/admin/bots/{bot_id}/delete")
@@ -464,7 +480,7 @@ def bot_delete(
         raise HTTPException(status_code=404)
     db.delete(bot)
     db.commit()
-    return RedirectResponse(url="/admin/bots", status_code=303)
+    return _safe_redirect("/admin/bots")
 
 
 # ── Chat Verification ─────────────────────────────────────────────────────────
@@ -506,7 +522,7 @@ def destination_verify_start(
         raise HTTPException(status_code=400, detail="Verification bot not configured — go to Settings")
     existing = verification.get_by_dest(dest_id)
     code = existing[0] if existing else verification.create(dest.id, dest.telegram_chat_label or "")
-    return RedirectResponse(url=f"/admin/destinations/{dest_id}/verify?code={code}", status_code=303)
+    return _safe_redirect(f"/admin/destinations/{dest_id}/verify?code={code}")
 
 
 @router.post("/admin/destinations/{dest_id}/verify-poll")
@@ -522,7 +538,7 @@ async def destination_verify_poll(
 
     entry = verification.get_by_dest(dest_id)
     if not entry or entry[0] != code:
-        return RedirectResponse(url=f"/admin/projects/{dest.project_id}", status_code=303)
+        return _safe_redirect(f"/admin/projects/{dest.project_id}")
 
     updates = await telegram_notifier.get_updates(settings_store.get_setting(db, "verification_bot_token"))
 
@@ -539,9 +555,6 @@ async def destination_verify_poll(
             # Test message from the actual notification bot
             if dest.bot and dest.bot.telegram_bot_token:
                 return await _test_and_redirect(db, dest, dest.bot.telegram_bot_token, f"/admin/projects/{dest.project_id}")
-            return RedirectResponse(url=f"/admin/projects/{dest.project_id}?saved=1", status_code=303)
+            return _safe_redirect(f"/admin/projects/{dest.project_id}?saved=1")
 
-    return RedirectResponse(
-        url=f"/admin/destinations/{dest_id}/verify?code={code}&not_found=1",
-        status_code=303,
-    )
+    return _safe_redirect(f"/admin/destinations/{dest_id}/verify?code={code}&not_found=1")
