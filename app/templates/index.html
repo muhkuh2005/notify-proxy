@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+{% block title %}Projects — notify-proxy{% endblock %}
+{% block content %}
+<h1>Projects</h1>
+
+{% if coolify_incoming_token %}
+<div class="info-box">
+  <strong>Coolify Webhook URL</strong><br>
+  Configure in Coolify → Team Settings → Notifications → Webhook:<br>
+  <code class="block" style="margin:8px 0;word-break:break-all">{{ request.base_url }}webhook/coolify/{{ coolify_incoming_token }}</code>
+  <button class="btn-sm" type="button" onclick="copyText(this, '{{ request.base_url }}webhook/coolify/{{ coolify_incoming_token }}')">Copy URL</button>
+  <small style="display:block;margin-top:8px">Routes by <code>application_uuid</code> to the matching project below.</small>
+</div>
+{% endif %}
+
+{% if request.query_params.get("synced") %}
+<div class="flash success">Synced {{ request.query_params.get("synced") }} project(s) from Coolify.</div>
+{% endif %}
+
+<div class="toolbar">
+  <a href="/admin/projects/new" class="btn">+ New Project</a>
+  {% if coolify_sync_enabled %}
+  <form method="post" action="/admin/sync-coolify" style="display:inline">
+    <button type="submit" class="btn btn-secondary">↻ Sync from Coolify</button>
+  </form>
+  {% endif %}
+  <input type="text" id="name-filter" placeholder="Filter by name…"
+         oninput="applyFilter()"
+         style="max-width:180px;margin-left:auto">
+  <select id="group-filter" onchange="applyFilter()" style="width:auto;min-width:140px">
+    <option value="">All groups</option>
+  </select>
+</div>
+
+{% if projects %}
+<table>
+  <thead>
+    <tr>
+      <th>Name</th>
+      <th>Destinations</th>
+      <th>Filter</th>
+      <th>Webhook URL</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for p in projects %}
+    <tr>
+      <td>
+        <a href="/admin/projects/{{ p.id }}">
+          {% if p.coolify_project_name %}<span class="project-scope">{{ p.coolify_project_name }} /</span> {% endif %}{{ p.name }}
+        </a>
+        {% if p.is_default %}<span class="badge badge-default">default</span>{% endif %}
+      </td>
+      <td>{{ p.destinations | length }}</td>
+      <td>
+        {% if p.filter_mode.value == 'errors_only' %}<span class="badge badge-warn" style="white-space:nowrap">errors only</span>
+        {% elif p.filter_mode.value == 'off' %}<span class="badge badge-muted">off</span>
+        {% else %}<span style="color:var(--text-muted);font-size:12px">all</span>{% endif %}
+      </td>
+      <td>
+        <button class="btn-sm" type="button"
+                onclick="copyText(this, '{{ request.base_url }}webhook/{{ p.token }}')">Copy URL</button>
+      </td>
+      <td>
+        <a href="/admin/projects/{{ p.id }}" class="btn-sm">Edit</a>
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="empty">No projects yet. <a href="/admin/projects/new">Create one.</a></p>
+{% endif %}
+
+<script>
+(function() {
+  var groups = new Set();
+  document.querySelectorAll('tbody tr').forEach(function(row) {
+    var scope = row.querySelector('.project-scope');
+    if (scope) groups.add(scope.textContent.trim().replace(/\s*\/\s*$/, ''));
+  });
+  var sel = document.getElementById('group-filter');
+  groups.forEach(function(g) {
+    var opt = document.createElement('option');
+    opt.value = g; opt.textContent = g;
+    sel.appendChild(opt);
+  });
+  if (groups.size === 0) sel.style.display = 'none';
+})();
+
+function applyFilter() {
+  var name = document.getElementById('name-filter').value.toLowerCase();
+  var group = document.getElementById('group-filter').value;
+  document.querySelectorAll('tbody tr').forEach(function(row) {
+    var cell = row.querySelector('td:first-child');
+    var nameMatch = !name || cell.textContent.toLowerCase().includes(name);
+    var scopeEl = cell.querySelector('.project-scope');
+    var scopeText = scopeEl ? scopeEl.textContent.trim().replace(/\s*\/\s*$/, '') : '';
+    var groupMatch = !group || scopeText === group;
+    row.style.display = nameMatch && groupMatch ? '' : 'none';
+  });
+}
+
+function copyText(btn, text) {
+  navigator.clipboard.writeText(text).then(function() {
+    var orig = btn.textContent;
+    btn.textContent = 'Copied!';
+    btn.style.color = 'var(--ok)';
+    btn.style.borderColor = 'var(--ok)';
+    setTimeout(function() {
+      btn.textContent = orig;
+      btn.style.color = '';
+      btn.style.borderColor = '';
+    }, 1500);
+  });
+}
+</script>
+{% endblock %}

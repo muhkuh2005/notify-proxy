@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Chat verifizieren — notify-proxy{% endblock %}
+{% block content %}
+
+<div class="breadcrumb">
+  <a href="/admin">Projects</a> /
+  <a href="/admin/projects/{{ dest.project_id }}">{{ dest.project.name }}</a> /
+  Chat verifizieren
+</div>
+<h1>Chat verifizieren</h1>
+
+{% if not_found %}
+<div class="flash" style="background:#2a1a10;border:1px solid #f59e0b44;color:var(--warn);border-radius:6px;padding:10px 14px;margin-bottom:16px;font-size:14px;">
+  Code noch nicht gefunden. Stelle sicher, dass du ihn an den richtigen Bot geschickt hast.
+</div>
+{% endif %}
+
+<section class="card">
+  <h2>Schritt 1 — Code senden</h2>
+  <p>Der Username <code>{{ dest.telegram_chat_label }}</code> konnte nicht automatisch aufgelöst werden (Telegram erlaubt das für private Accounts nicht).</p>
+  <p style="margin-top:12px">Schicke folgende Nachricht an den Bot
+    {% if bot_info %}<strong>@{{ bot_info.username }}</strong>{% else %}<strong>{{ dest.bot.name }}</strong>{% endif %}
+    in Telegram:
+  </p>
+  <code class="block" style="font-size:22px;letter-spacing:4px;margin:16px 0;text-align:center">{{ code }}</code>
+  {% if bot_info %}
+  <p class="hint">Direktlink: <a href="https://t.me/{{ bot_info.username }}?start={{ code }}" target="_blank">t.me/{{ bot_info.username }}?start={{ code }}</a></p>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h2>Schritt 2 — Bestätigen</h2>
+  <p class="hint" style="margin-bottom:14px">Nachdem du den Code gesendet hast, klicke auf "Überprüfen".</p>
+  <form method="post" action="/admin/destinations/{{ dest.id }}/verify-poll">
+    <input type="hidden" name="code" value="{{ code }}">
+    <button type="submit" class="btn">Überprüfen</button>
+  </form>
+</section>
+
+<section class="card">
+  <h2>Abbrechen</h2>
+  <form method="post" action="/admin/destinations/{{ dest.id }}/delete"
+        onsubmit="return confirm('Destination verwerfen?')">
+    <button type="submit" class="btn-danger">Destination löschen</button>
+  </form>
+</section>
+
+{% endblock %}

@@ -1,0 +1,43 @@
+services:
+  app:
+    image: ${NOTIFY_PROXY_IMAGE:-ghcr.io/your-org/notify-proxy:main}
+    pull_policy: always
+    expose:
+      - "8000"
+    volumes:
+      - data:/data
+    environment:
+      DATABASE_URL: sqlite:////data/notify-proxy.db
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      ADMIN_USER: ${ADMIN_USER}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      COOLIFY_BASE_URL: ${COOLIFY_BASE_URL:-}
+      COOLIFY_TOKEN: ${COOLIFY_TOKEN:-}
+      COOLIFY_INCOMING_TOKEN: ${COOLIFY_INCOMING_TOKEN:-}
+      VERIFICATION_BOT_TOKEN: ${VERIFICATION_BOT_TOKEN:-}
+    logging:
+      driver: json-file
+      options:
+        max-size: 5m
+        max-file: "5"
+    labels:
+      - "traefik.http.services.notify-proxy.loadbalancer.server.port=8000"
+    networks:
+      - default
+      - coolify
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  data:
+
+networks:
+  default:
+    name: notify_proxy_network
+  coolify:
+    external: true

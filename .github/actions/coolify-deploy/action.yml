@@ -1,0 +1,117 @@
+name: Coolify Deploy
+description: Triggers a Coolify deployment via webhook and polls until terminal state.
+
+inputs:
+  webhook_url:
+    description: Full Coolify deploy-webhook URL (https://.../api/v1/deploy?uuid=...)
+    required: true
+  coolify_token:
+    description: Coolify API Bearer-Token (used for both trigger + poll calls)
+    required: true
+  label:
+    description: Human-readable service label for log lines
+    required: true
+  poll_interval_seconds:
+    description: Sleep between status polls
+    required: false
+    default: "5"
+  poll_max_attempts:
+    description: Max polling attempts before timeout (default 144 × 5s = 12 min)
+    required: false
+    default: "144"
+
+runs:
+  using: composite
+  steps:
+    - name: Trigger + poll deployment
+      shell: bash
+      env:
+        WEBHOOK_URL: ${{ inputs.webhook_url }}
+        COOLIFY_TOKEN: ${{ inputs.coolify_token }}
+        LABEL: ${{ inputs.label }}
+        POLL_INTERVAL_SECONDS: ${{ inputs.poll_interval_seconds }}
+        POLL_MAX_ATTEMPTS: ${{ inputs.poll_max_attempts }}
+      run: |
+        set -u
+
+        base_url_of() {
+          echo "$1" | grep -oE '^https?://[^/]+'
+        }
+
+        poll_deployment() {
+          local BASE="$1"
+          local UUID="$2"
+          local ATTEMPT=0
+          local LAST_STATUS=""
+          local STATUS_URL="$BASE/api/v1/deployments/$UUID"
+
+          echo "⏳ $LABEL: polling $STATUS_URL"
+          while [ "$ATTEMPT" -lt "$POLL_MAX_ATTEMPTS" ]; do
+            local RESP
+            RESP=$(curl -sS -L -X GET "$STATUS_URL" \
+              -H "Authorization: Bearer $COOLIFY_TOKEN" \
+              -H "Accept: application/json" || true)
+            local STATUS
+            STATUS=$(echo "$RESP" | jq -r '.status // empty' 2>/dev/null || true)
+            if [ -z "$STATUS" ]; then
+              STATUS=$(echo "$RESP" | grep -oE '"status"[[:space:]]*:[[:space:]]*"[^"]+"' | head -n 1 | sed -E 's/.*"([^"]+)"$/\1/')
+            fi
+
+            if [ -z "$STATUS" ]; then
+              echo "   [attempt $((ATTEMPT+1))] $LABEL: kein Status im Response (yet)"
+            elif [ "$STATUS" != "$LAST_STATUS" ]; then
+              echo "   [attempt $((ATTEMPT+1))] $LABEL: status=$STATUS"
+              LAST_STATUS="$STATUS"
+            fi
+
+            case "$STATUS" in
+              finished)
+                echo "✅ $LABEL: deployment finished (uuid=$UUID)"
+                return 0
+                ;;
+              failed|failed-with-errors|error)
+                echo "❌ $LABEL: deployment failed (status=$STATUS, uuid=$UUID)"
+                return 1
+                ;;
+              cancelled-by-user|cancelled)
+                echo "❌ $LABEL: deployment cancelled (status=$STATUS, uuid=$UUID)"
+                return 1
+                ;;
+            esac
+
+            ATTEMPT=$((ATTEMPT+1))
+            sleep "$POLL_INTERVAL_SECONDS"
+          done
+
+          echo "❌ $LABEL: polling timeout nach $((POLL_MAX_ATTEMPTS*POLL_INTERVAL_SECONDS))s (last_status=${LAST_STATUS:-unknown})"
+          return 1
+        }
+
+        if [ -z "$WEBHOOK_URL" ]; then
+          echo "⚠️  $LABEL: webhook secret not set, skipping"
+          exit 0
+        fi
+        CLEAN_URL=$(echo "$WEBHOOK_URL" | grep -oE 'https?://[^ "]+' | head -n 1 | sed 's/["'"'"']//g')
+        if [ -z "$CLEAN_URL" ]; then
+          echo "⚠️  $LABEL: could not parse webhook URL, skipping"
+          exit 0
+        fi
+
+        echo "🚀 Triggering $LABEL deployment: $CLEAN_URL"
+        RESP=$(curl -sS -L -X GET "$CLEAN_URL" \
+          -H "Authorization: Bearer $COOLIFY_TOKEN" \
+          -H "Accept: application/json")
+        echo "   trigger response: $RESP"
+
+        UUID=$(echo "$RESP" | jq -r '(.deployments[0].deployment_uuid // .deployment_uuid // .uuid // empty)' 2>/dev/null || true)
+        if [ -z "$UUID" ]; then
+          UUID=$(echo "$RESP" | grep -oE '"deployment_uuid"[[:space:]]*:[[:space:]]*"[^"]+"' | head -n 1 | sed -E 's/.*"([^"]+)"$/\1/')
+        fi
+        if [ -z "$UUID" ]; then
+          echo "❌ $LABEL: konnte keine deployment_uuid aus Webhook-Response extrahieren"
+          exit 1
+        fi
+        echo "   deployment_uuid=$UUID"
+
+        BASE=$(base_url_of "$CLEAN_URL")
+        poll_deployment "$BASE" "$UUID"

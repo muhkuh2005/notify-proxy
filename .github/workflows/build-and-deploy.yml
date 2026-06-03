@@ -1,0 +1,88 @@
+name: Build & Deploy
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "**/*.md"
+      - ".gitignore"
+  workflow_dispatch:
+
+concurrency:
+  group: build-deploy-${{ github.ref_name }}
+  cancel-in-progress: true
+
+env:
+  REGISTRY_URL: ${{ secrets.REGISTRY_URL }}
+  REGISTRY_USER: ${{ secrets.REGISTRY_USER }}
+  REGISTRY_PASS: ${{ secrets.REGISTRY_PASS }}
+
+jobs:
+  build:
+    name: Build notify-proxy
+    # Skip on forks: build/deploy needs registry + Coolify secrets the fork won't have.
+    if: github.repository == 'muhkuh2005/notify-proxy'
+    runs-on: ${{ fromJSON(vars.RUNNER_LABELS || '"ubuntu-latest"') }}
+    timeout-minutes: 15
+    steps:
+      - name: Resolve commit SHA
+        id: sha
+        run: |
+          SHA="${{ github.sha }}"
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "short=${SHA:0:12}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ steps.sha.outputs.sha }}
+
+      - name: Set up BuildKit
+        run: docker buildx create --use --name builder 2>/dev/null || docker buildx use builder
+
+      - name: Login to Registry
+        run: |
+          echo "${{ env.REGISTRY_PASS }}" | docker login \
+            -u "${{ env.REGISTRY_USER }}" \
+            --password-stdin "${{ env.REGISTRY_URL }}"
+
+      - name: Build & Push
+        run: |
+          set -euo pipefail
+          SHA="${{ steps.sha.outputs.sha }}"
+          IMAGE_REPO="${{ env.REGISTRY_URL }}/notify-proxy"
+          CACHE_DIR=/var/cache/buildkit/notify-proxy
+          mkdir -p "${CACHE_DIR}"
+
+          docker buildx build \
+            --platform linux/amd64 \
+            --cache-from "type=local,src=${CACHE_DIR}" \
+            --cache-to "type=local,dest=${CACHE_DIR},mode=max" \
+            --build-arg "SOURCE_COMMIT=${SHA}" \
+            -t "${IMAGE_REPO}:${SHA}" \
+            -t "${IMAGE_REPO}:main" \
+            -f Dockerfile \
+            . \
+            --push \
+            --progress=plain
+
+          echo "Pushed ${IMAGE_REPO}:${SHA}"
+          echo "Pushed ${IMAGE_REPO}:main"
+
+      - name: Logout
+        if: always()
+        run: docker logout "${{ env.REGISTRY_URL }}" || true
+
+  deploy:
+    name: Deploy notify-proxy
+    needs: [build]
+    if: github.repository == 'muhkuh2005/notify-proxy'
+    runs-on: ${{ fromJSON(vars.RUNNER_LABELS || '"ubuntu-latest"') }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - name: Trigger Coolify Deployment
+        uses: ./.github/actions/coolify-deploy
+        with:
+          webhook_url: ${{ secrets.COOLIFY_NOTIFY_PROXY_WEBHOOK }}
+          coolify_token: ${{ secrets.COOLIFY_TOKEN }}
+          label: notify-proxy

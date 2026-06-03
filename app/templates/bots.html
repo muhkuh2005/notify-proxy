@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Bots — notify-proxy{% endblock %}
+{% block content %}
+<h1>Bots</h1>
+<p class="hint" style="margin-bottom:20px">Bots hold the credentials (token, server URL). Assign a bot to a project destination to send notifications.</p>
+
+<div class="toolbar">
+  <a href="/admin/bots/new" class="btn">+ New Bot</a>
+</div>
+
+{% if bots %}
+<table>
+  <thead>
+    <tr><th>Name</th><th>Type</th><th>Used by</th><th></th></tr>
+  </thead>
+  <tbody>
+  {% for b in bots %}
+    <tr>
+      <td><a href="/admin/bots/{{ b.id }}">{{ b.name }}</a></td>
+      <td><span class="badge {{ b.type.value }}">{{ b.type.value }}</span></td>
+      <td>{{ b.destinations | length }} destination(s)</td>
+      <td>
+        <a href="/admin/bots/{{ b.id }}" class="btn-sm">Edit</a>
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="empty">No bots yet. <a href="/admin/bots/new">Create one.</a></p>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,44 @@
+name: Bug report
+description: Report something that isn't working
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report! Please **do not** include secrets (tokens,
+        passwords) in logs you paste. For security vulnerabilities, see SECURITY.md.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. ...
+        2. ...
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: Output with LOG_LEVEL=DEBUG if possible (redact secrets).
+      render: shell
+  - type: input
+    id: version
+    attributes:
+      label: Version / image tag
+      placeholder: "main / commit sha"
+  - type: dropdown
+    id: deployment
+    attributes:
+      label: How are you running it?
+      options:
+        - Docker Compose
+        - Coolify
+        - Other

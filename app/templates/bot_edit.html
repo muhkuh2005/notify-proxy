@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}{% if bot %}{{ bot.name }}{% else %}New Bot{% endif %} — notify-proxy{% endblock %}
+{% block content %}
+
+<div class="breadcrumb"><a href="/admin/bots">Bots</a> / {% if bot %}{{ bot.name }}{% else %}New{% endif %}</div>
+<h1>{% if bot %}Edit Bot{% else %}New Bot{% endif %}</h1>
+
+{% if bot %}
+<section class="card">
+  <form method="post" action="/admin/bots/{{ bot.id }}">
+    <label>Name
+      <input type="text" name="name" value="{{ bot.name }}" required>
+    </label>
+    <p class="hint">Type: <strong>{{ bot.type }}</strong> (cannot be changed)</p>
+
+    {% if bot.type == "telegram" %}
+    <label>Bot Token
+      <input type="password" name="telegram_bot_token" placeholder="Leave blank to keep current">
+    </label>
+    <p class="hint">Get a token from <a href="https://t.me/BotFather" target="_blank">@BotFather</a></p>
+    {% else %}
+    <label>ntfy Server URL
+      <input type="url" name="ntfy_url" value="{{ bot.ntfy_url or '' }}">
+    </label>
+    <label>Token (optional)
+      <input type="password" name="ntfy_token" placeholder="Leave blank to keep current">
+    </label>
+    {% endif %}
+
+    <button type="submit" class="btn">Save</button>
+  </form>
+</section>
+
+<section class="card danger-zone">
+  <h2>Danger Zone</h2>
+  <p class="hint" style="margin-bottom:12px">Deletes the bot and removes it from all destinations using it.</p>
+  <form method="post" action="/admin/bots/{{ bot.id }}/delete"
+        onsubmit="return confirm('Delete bot {{ bot.name }}?')">
+    <button type="submit" class="btn-danger">Delete Bot</button>
+  </form>
+</section>
+
+{% else %}
+<section class="card">
+  <form method="post" action="/admin/bots/new" id="bot-form">
+    <label>Name
+      <input type="text" name="name" required placeholder="DSO-Bot" autofocus>
+    </label>
+    <label>Type
+      <select name="bot_type" onchange="showBotFields(this.value)">
+        <option value="telegram">Telegram</option>
+        <option value="ntfy">ntfy</option>
+      </select>
+    </label>
+
+    <div id="fields-telegram">
+      <label>Bot Token
+        <input type="password" name="telegram_bot_token" placeholder="1234567890:ABC...">
+      </label>
+      <p class="hint">Get a token from <a href="https://t.me/BotFather" target="_blank">@BotFather</a></p>
+    </div>
+
+    <div id="fields-ntfy" style="display:none">
+      <label>ntfy Server URL
+        <input type="url" name="ntfy_url" placeholder="https://ntfy.sh">
+      </label>
+      <label>Token (optional)
+        <input type="password" name="ntfy_token" placeholder="tk_...">
+      </label>
+    </div>
+
+    <button type="submit" class="btn">Create Bot</button>
+  </form>
+</section>
+
+<script>
+function showBotFields(type) {
+  document.getElementById('fields-telegram').style.display = type === 'telegram' ? '' : 'none';
+  document.getElementById('fields-ntfy').style.display = type === 'ntfy' ? '' : 'none';
+}
+</script>
+{% endif %}
+{% endblock %}
