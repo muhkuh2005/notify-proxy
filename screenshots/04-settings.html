@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Settings — notify-proxy</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <nav>
+    <a href="/admin" class="brand">notify-proxy</a>
+    <div class="nav-links">
+      <a href="/admin/bots" class="nav-link">Bots</a>
+      
+      <a href="/admin/settings" class="nav-link">Settings</a>
+      <a href="/admin/users" class="nav-link">Users</a>
+      <a href="/admin/projects/new" class="btn-sm">+ Project</a>
+      
+      
+    </div>
+  </nav>
+  <main>
+    
+
+<div class="breadcrumb"><a href="/admin">Projects</a> / Settings</div>
+<h1>Settings</h1>
+
+
+
+<section class="card">
+  <h2>Verification Bot</h2>
+  <p style="margin-bottom:14px">
+    Dedizierter Telegram-Bot für den @username→ID-Verifikationsflow.
+    Dieser Bot darf <strong>keinen Webhook</strong> haben — er wird per <code>getUpdates</code> abgefragt.
+  </p>
+
+  
+
+  <form method="post" action="/admin/settings">
+    <label>Bot Token
+      <input type="password" name="verification_bot_token"
+             placeholder="1234567890:ABCdef..."
+             autocomplete="off">
+    </label>
+    <button type="submit" class="btn">Speichern</button>
+  </form>
+
+  
+</section>
+
+
+  </main>
+</body>
+</html>
