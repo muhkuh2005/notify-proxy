@@ -1,0 +1,32 @@
+﻿============================= test session starts =============================
+platform win32 -- Python 3.11.9, pytest-9.0.3, pluggy-1.6.0
+rootdir: D:\notify-proxy
+configfile: pyproject.toml
+plugins: anyio-4.13.0, cov-7.1.0, respx-0.23.1
+collected 160 items
+
+tests\test_admin_routes.py E
+
+=================================== ERRORS ====================================
+______________ ERROR at setup of test_admin_index_requires_auth _______________
+
+    @pytest.fixture(scope="session", autouse=True)
+    def _clean_db():
+        """Start each test session from a fresh SQLite file."""
+        path = "/tmp/notify_proxy_test.db"
+        for p in (path, f"{path}-wal", f"{path}-shm"):
+            try:
+>               os.remove(p)
+E               PermissionError: [WinError 32] The process cannot access the file because it is being used by another process: '/tmp/notify_proxy_test.db'
+
+tests\conftest.py:25: PermissionError
+============================== warnings summary ===============================
+C:\Users\win11\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\LocalCache\local-packages\Python311\site-packages\fastapi\testclient.py:1
+  C:\Users\win11\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\LocalCache\local-packages\Python311\site-packages\fastapi\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+ERROR tests/test_admin_routes.py::test_admin_index_requires_auth - Permission...
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!
+========================= 1 warning, 1 error in 1.21s =========================
