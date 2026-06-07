@@ -6,7 +6,7 @@ from app.routes.webhook import (
     _extract_commit,
     _format_message,
     _is_error,
-    _resolve_commit,
+    _resolve_version,
     _short_commit,
     _strip_html,
 )
@@ -106,14 +106,23 @@ class TestFormatMessage:
 
     def test_commit_shown_in_body(self):
         _, body = _format_message(
-            {"status": "success", "application_name": "x"}, commit="ab12cd3"
+            {"status": "success", "application_name": "x"}, version=("ab12cd3", True)
         )
         assert "Commit: " in body
         assert "ab12cd3" in body
 
-    def test_no_commit_no_line(self):
+    def test_version_tag_shown_in_body(self):
+        _, body = _format_message(
+            {"status": "success", "application_name": "x"}, version=("pr-1253", False)
+        )
+        assert "Version: " in body
+        assert "pr-1253" in body
+        assert "Commit:" not in body
+
+    def test_no_version_no_line(self):
         _, body = _format_message({"status": "success", "application_name": "x"})
         assert "Commit:" not in body
+        assert "Version:" not in body
 
 
 class TestCommit:
@@ -136,21 +145,35 @@ class TestCommit:
     def test_resolve_prefers_payload_over_api(self, monkeypatch):
         async def boom(deployment_uuid):
             raise AssertionError("API must not be called when payload has commit")
-        monkeypatch.setattr("app.services.coolify_sync.get_deployment_commit", boom)
-        out = asyncio.run(_resolve_commit({"git_commit_sha": "feedface0011"}))
-        assert out == "feedface"
+        monkeypatch.setattr("app.services.coolify_sync.get_deployment_info", boom)
+        out = asyncio.run(_resolve_version({"git_commit_sha": "feedface0011"}))
+        assert out == ("feedface", True)
 
-    def test_resolve_falls_back_to_api(self, monkeypatch):
+    def test_resolve_real_commit_from_deployment(self, monkeypatch):
         async def fake(deployment_uuid):
             assert deployment_uuid == "dep-1"
-            return "00aa11bb22cc"
-        monkeypatch.setattr("app.services.coolify_sync.get_deployment_commit", fake)
-        out = asyncio.run(_resolve_commit({"deployment_uuid": "dep-1"}))
-        assert out == "00aa11bb"
+            return {"commit": "00aa11bb22cc", "image_tag": "pr-9"}
+        monkeypatch.setattr("app.services.coolify_sync.get_deployment_info", fake)
+        out = asyncio.run(_resolve_version({"deployment_uuid": "dep-1"}))
+        assert out == ("00aa11bb", True)  # commit wins over tag
+
+    def test_resolve_image_tag_fallback(self, monkeypatch):
+        async def fake(deployment_uuid):
+            return {"commit": None, "image_tag": "pr-1253"}
+        monkeypatch.setattr("app.services.coolify_sync.get_deployment_info", fake)
+        out = asyncio.run(_resolve_version({"deployment_uuid": "dep-1"}))
+        assert out == ("pr-1253", False)  # is_commit False -> "Version" label
+
+    def test_resolve_skips_noise_tag(self, monkeypatch):
+        async def fake(deployment_uuid):
+            return {"commit": None, "image_tag": "latest"}
+        monkeypatch.setattr("app.services.coolify_sync.get_deployment_info", fake)
+        out = asyncio.run(_resolve_version({"deployment_uuid": "dep-1"}))
+        assert out is None
 
     def test_resolve_none_when_nothing(self, monkeypatch):
         async def none(deployment_uuid):
             return None
-        monkeypatch.setattr("app.services.coolify_sync.get_deployment_commit", none)
-        out = asyncio.run(_resolve_commit({"application_name": "x"}))
+        monkeypatch.setattr("app.services.coolify_sync.get_deployment_info", none)
+        out = asyncio.run(_resolve_version({"application_name": "x"}))
         assert out is None

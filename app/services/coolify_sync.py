@@ -116,14 +116,17 @@ async def sync_projects(db: Session) -> dict:
     return {"created": created, "updated": updated, "skipped": skipped}
 
 
-async def get_deployment_commit(deployment_uuid: str) -> str | None:
-    """Fetch the resolved git commit SHA for a deployment from the Coolify API.
+async def get_deployment_info(deployment_uuid: str) -> dict | None:
+    """Fetch commit + image tag for a deployment from the Coolify API.
 
     Coolify deployment *notification* webhooks carry no commit, and the
     application object only ever exposes the symbolic ref "HEAD". The deployment
-    record (keyed by the webhook's ``deployment_uuid``) holds the real SHA.
-    Returns None when the API is unconfigured, the call fails, or the commit is
-    still the symbolic "HEAD" (e.g. a manual redeploy).
+    record (keyed by the webhook's ``deployment_uuid``) holds the real SHA — but
+    only for git-push deploys; webhook/API-triggered deploys store "HEAD" too,
+    in which case the docker image tag is the next-best version marker.
+
+    Returns ``{"commit": <sha or None>, "image_tag": <tag or "">}`` or None when
+    the API is unconfigured or the call fails.
     """
     if not is_configured() or not deployment_uuid:
         return None
@@ -136,9 +139,10 @@ async def get_deployment_commit(deployment_uuid: str) -> str | None:
             )
             resp.raise_for_status()
             data = resp.json()
-        sha = str(data.get("commit") or "").strip()
-        if sha and sha.lower() != "head":
-            return sha
     except Exception as exc:
-        logger.warning("coolify commit fetch failed deployment=%s: %s", deployment_uuid, exc)
-    return None
+        logger.warning("coolify deployment fetch failed deployment=%s: %s", deployment_uuid, exc)
+        return None
+
+    sha = str(data.get("commit") or "").strip()
+    commit = sha if sha and sha.lower() != "head" else None
+    return {"commit": commit, "image_tag": str(data.get("docker_registry_image_tag") or "").strip()}

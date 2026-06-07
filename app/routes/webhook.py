@@ -90,26 +90,38 @@ def _extract_commit(payload: dict[str, Any]) -> str | None:
     return None
 
 
-async def _resolve_commit(payload: dict[str, Any]) -> str | None:
-    """Commit/version for the notice: payload first (free), then Coolify API by
-    deployment_uuid (deploy webhooks carry no commit; the deployment record holds
-    the resolved SHA — the application object only ever returns "HEAD")."""
+_NOISE_TAGS = {"latest", "main", "master", "head", "stable", "edge", ""}
+
+
+async def _resolve_version(payload: dict[str, Any]) -> tuple[str, bool] | None:
+    """Resolve a version marker for the notice as ``(text, is_commit)``.
+
+    Order: commit from payload (free) -> Coolify deployment record by
+    deployment_uuid (real SHA for git-push deploys) -> the deployment's docker
+    image tag as a fallback "version" (webhook/API deploys store commit "HEAD").
+    Noise tags like latest/main are ignored. Returns None when nothing useful.
+    """
     direct = _extract_commit(payload)
     if direct:
-        return direct
+        return direct, True
     deployment_uuid = payload.get("deployment_uuid") or ""
     if deployment_uuid:
-        sha = await coolify_sync.get_deployment_commit(deployment_uuid)
-        if sha:
-            return _short_commit(sha)
+        info = await coolify_sync.get_deployment_info(deployment_uuid)
+        if info:
+            if info.get("commit"):
+                return _short_commit(info["commit"]), True
+            tag = info.get("image_tag", "")
+            if tag.lower() not in _NOISE_TAGS:
+                return tag, False
     return None
 
 
-def _format_message(payload: dict[str, Any], commit: str | None = None) -> tuple[str, str]:
+def _format_message(payload: dict[str, Any], version: tuple[str, bool] | None = None) -> tuple[str, str]:
     """Return (title, body) from a Coolify webhook payload.
 
-    ``commit`` is an already-resolved commit/version string (see
-    :func:`_resolve_commit`); when present it is added as a line in the body.
+    ``version`` is an already-resolved ``(text, is_commit)`` pair (see
+    :func:`_resolve_version`); when present it is added as a body line labelled
+    "Commit" or "Version".
     """
     logger.debug("payload keys: %s | full: %s", list(payload.keys()), payload)
 
@@ -167,8 +179,9 @@ def _format_message(payload: dict[str, Any], commit: str | None = None) -> tuple
     display_name = f"{project} — {app_name}" if project else app_name
     title = f"{status_emoji} {display_name}: {status}"
     parts = [f"<b>{display_name}</b>  {status_emoji} <code>{status}</code>"]
-    if commit:
-        parts.append(f"Commit: <code>{commit}</code>")
+    if version:
+        text, is_commit = version
+        parts.append(f"{'Commit' if is_commit else 'Version'}: <code>{text}</code>")
     if env:
         parts.append(f"Env: {env}")
     if app_url:
@@ -243,8 +256,8 @@ def _dest_target(dest) -> str:
 
 
 async def _dispatch(project: Project, payload: dict, db: Session) -> list[dict]:
-    commit = await _resolve_commit(payload)
-    title, body = _format_message(payload, commit)
+    version = await _resolve_version(payload)
+    title, body = _format_message(payload, version)
     is_err = _is_error(payload)
 
     async def _send_dest(dest) -> dict:
