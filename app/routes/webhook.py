@@ -21,11 +21,44 @@ _ERROR_STATUSES = {"failed", "failed-with-errors", "error", "cancelled", "cancel
 _ERROR_WORDS = {"fail", "failed", "error", "critical", "crash", "down", "timeout"}
 
 
+def _derive_status(payload: dict[str, Any], event_type: str = "") -> str:
+    """Normalise a Coolify payload to a status word.
+
+    Coolify deployment webhooks carry NO ``status`` and NO ``type`` field.
+    They expose ``event`` ("deployment_success" / "deployment_failed") plus a
+    ``success`` bool. Older/other shapes may still send ``status``/``type``, so
+    fall through every known signal before giving up with "unknown".
+    """
+    explicit = payload.get("status")
+    if explicit:
+        return str(explicit)
+
+    event = str(payload.get("event") or event_type or "")
+    low = event.lower()
+    if low.endswith(("_success", "_succeeded", "_finished")):
+        return "success"
+    if low.endswith(("_failed", "_failure", "_error")):
+        return "failed"
+
+    success = payload.get("success")
+    if isinstance(success, bool):
+        return "success" if success else "failed"
+
+    message = str(payload.get("message", "")).lower()
+    if any(w in message for w in ("success", "succeeded", "deployed", "finished")):
+        return "success"
+    if any(w in message for w in ("fail", "error")):
+        return "failed"
+
+    return event or "unknown"
+
+
 def _is_error(payload: dict[str, Any]) -> bool:
-    status = str(payload.get("status", "")).lower()
-    if status in _ERROR_STATUSES:
+    if _derive_status(payload).lower() in _ERROR_STATUSES:
         return True
-    event_type = str(payload.get("type", "")).lower()
+    if str(payload.get("status", "")).lower() in _ERROR_STATUSES:
+        return True
+    event_type = str(payload.get("type") or payload.get("event") or "").lower()
     message = str(payload.get("message", "")).lower()
     combined = f"{event_type} {message}"
     return any(w in combined for w in _ERROR_WORDS)
@@ -68,12 +101,16 @@ def _format_message(payload: dict[str, Any]) -> tuple[str, str]:
             parts.append(f"\n{message}")
         return title, "\n".join(parts)
 
-    # Application-level events
-    status = payload.get("status", event_type or "unknown")
+    # Application-level events.
+    # Coolify deployment webhooks use real keys: event/success/message,
+    # application_name, project, environment, deployment_url, fqdn.
+    # Keep the older guessed keys as fallbacks for other event shapes.
+    status = _derive_status(payload, event_type)
     app_name = payload.get("application_name") or payload.get("name") or "unknown app"
-    app_url = payload.get("application_url") or payload.get("url", "")
-    project = payload.get("project_name", "")
-    env = payload.get("environment_name", "")
+    app_url = (payload.get("deployment_url") or payload.get("fqdn")
+               or payload.get("application_url") or payload.get("url", ""))
+    project = payload.get("project") or payload.get("project_name", "")
+    env = payload.get("environment") or payload.get("environment_name", "")
 
     status_emoji = {
         "finished": "✅",
@@ -187,7 +224,8 @@ async def _dispatch(project: Project, payload: dict, db: Session) -> list[dict]:
             if bot.ntfy_url and dest.ntfy_topic:
                 prio = dest.ntfy_priority or (4 if is_err else 3)
                 tags = ["rotating_light"] if is_err else ["white_check_mark"]
-                click = payload.get("application_url") or payload.get("url") or None
+                click = (payload.get("fqdn") or payload.get("application_url")
+                         or payload.get("deployment_url") or payload.get("url") or None)
                 factory = lambda: ntfy.send(
                     bot.ntfy_url, dest.ntfy_topic, title, _to_markdown(body), bot.ntfy_token,
                     priority=prio, tags=tags, click=click, markdown=True,
@@ -248,7 +286,9 @@ async def receive_coolify_webhook(token: str, request: Request, db: Session = De
 
     # Coolify sends periodic empty pings (server_uuid only, no type/status/app fields).
     # These carry no event data and would always route to default or get dropped — skip silently.
-    if not app_uuid and not app_name and not payload.get("type") and not payload.get("status"):
+    if (not app_uuid and not app_name and not payload.get("type")
+            and not payload.get("status") and not payload.get("event")
+            and payload.get("success") is None):
         logger.debug("coolify ping server_uuid=%s — empty payload, ignored", server_uuid)
         return {"routed": False, "reason": "empty ping"}
 

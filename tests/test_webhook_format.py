@@ -59,3 +59,42 @@ class TestFormatMessage:
         )
         assert "node1" in title
         assert "Server Backup Finished" in body
+
+    def test_coolify_deploy_success_real_payload(self):
+        # Real Coolify deployment webhook: no status/type, uses event/success
+        # and the real key names project/environment/deployment_url.
+        title, body = _format_message(
+            {
+                "event": "deployment_success",
+                "success": True,
+                "message": "New version successfully deployed",
+                "application_name": "Engine",
+                "project": "gentle-season",
+                "environment": "production",
+                "deployment_url": "https://coolify/deploy/abc",
+            }
+        )
+        assert title.startswith("✅")
+        assert "unknown" not in title.lower()
+        assert "Engine" in title and "gentle-season" in title
+        assert "success" in body
+        assert "production" in body
+
+    def test_coolify_deploy_failed_real_payload(self):
+        title, _ = _format_message(
+            {
+                "event": "deployment_failed",
+                "success": False,
+                "message": "Deployment failed",
+                "application_name": "Engine",
+            }
+        )
+        assert title.startswith("❌")
+        assert "unknown" not in title.lower()
+
+    def test_deploy_success_via_message_only(self):
+        # No event, no success bool — derive from message text.
+        title, _ = _format_message(
+            {"message": "New version successfully deployed", "application_name": "x"}
+        )
+        assert title.startswith("✅")
