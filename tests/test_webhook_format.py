@@ -1,8 +1,13 @@
 """Unit tests for the pure formatting/classification helpers in webhook.py."""
+import asyncio
+
 from app.routes.webhook import (
     _camel_to_words,
+    _extract_commit,
     _format_message,
     _is_error,
+    _resolve_commit,
+    _short_commit,
     _strip_html,
 )
 
@@ -98,3 +103,54 @@ class TestFormatMessage:
             {"message": "New version successfully deployed", "application_name": "x"}
         )
         assert title.startswith("✅")
+
+    def test_commit_shown_in_body(self):
+        _, body = _format_message(
+            {"status": "success", "application_name": "x"}, commit="ab12cd3"
+        )
+        assert "Commit: " in body
+        assert "ab12cd3" in body
+
+    def test_no_commit_no_line(self):
+        _, body = _format_message({"status": "success", "application_name": "x"})
+        assert "Commit:" not in body
+
+
+class TestCommit:
+    def test_short_commit_shortens_long_hex(self):
+        assert _short_commit("0123456789abcdef0123456789abcdef") == "01234567"
+
+    def test_short_commit_leaves_tag(self):
+        assert _short_commit("v1.2.3") == "v1.2.3"
+
+    def test_extract_from_payload_keys(self):
+        assert _extract_commit({"git_commit_sha": "deadbeef0123"}) == "deadbeef"
+        assert _extract_commit({"version": "v2.0.0"}) == "v2.0.0"
+
+    def test_extract_skips_head_ref(self):
+        assert _extract_commit({"commit": "HEAD"}) is None
+
+    def test_extract_none_when_absent(self):
+        assert _extract_commit({"application_name": "x"}) is None
+
+    def test_resolve_prefers_payload_over_api(self, monkeypatch):
+        async def boom(deployment_uuid):
+            raise AssertionError("API must not be called when payload has commit")
+        monkeypatch.setattr("app.services.coolify_sync.get_deployment_commit", boom)
+        out = asyncio.run(_resolve_commit({"git_commit_sha": "feedface0011"}))
+        assert out == "feedface"
+
+    def test_resolve_falls_back_to_api(self, monkeypatch):
+        async def fake(deployment_uuid):
+            assert deployment_uuid == "dep-1"
+            return "00aa11bb22cc"
+        monkeypatch.setattr("app.services.coolify_sync.get_deployment_commit", fake)
+        out = asyncio.run(_resolve_commit({"deployment_uuid": "dep-1"}))
+        assert out == "00aa11bb"
+
+    def test_resolve_none_when_nothing(self, monkeypatch):
+        async def none(deployment_uuid):
+            return None
+        monkeypatch.setattr("app.services.coolify_sync.get_deployment_commit", none)
+        out = asyncio.run(_resolve_commit({"application_name": "x"}))
+        assert out is None

@@ -10,6 +10,7 @@ from ..database import get_db
 from ..models import Destination, DestinationType, FilterMode, Project
 from ..notifiers import telegram, ntfy, mattermost, slack, discord
 from ..notifiers import email as email_notifier
+from ..services import coolify_sync
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -69,8 +70,47 @@ def _camel_to_words(s: str) -> str:
     return re.sub(r"(?<=[a-z])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])", " ", s)
 
 
-def _format_message(payload: dict[str, Any]) -> tuple[str, str]:
-    """Return (title, body) from a Coolify webhook payload."""
+_COMMIT_KEYS = ("commit_sha", "git_commit_sha", "commit", "sha", "revision", "version", "tag")
+
+
+def _short_commit(value: str) -> str:
+    """Shorten a long hex SHA to 8 chars; leave tags/versions untouched."""
+    s = str(value).strip()
+    if len(s) >= 12 and all(c in "0123456789abcdefABCDEF" for c in s):
+        return s[:8]
+    return s
+
+
+def _extract_commit(payload: dict[str, Any]) -> str | None:
+    """Pull a commit/version straight from the payload, if Coolify sent one."""
+    for key in _COMMIT_KEYS:
+        v = payload.get(key)
+        if v and str(v).strip().lower() != "head":
+            return _short_commit(v)
+    return None
+
+
+async def _resolve_commit(payload: dict[str, Any]) -> str | None:
+    """Commit/version for the notice: payload first (free), then Coolify API by
+    deployment_uuid (deploy webhooks carry no commit; the deployment record holds
+    the resolved SHA — the application object only ever returns "HEAD")."""
+    direct = _extract_commit(payload)
+    if direct:
+        return direct
+    deployment_uuid = payload.get("deployment_uuid") or ""
+    if deployment_uuid:
+        sha = await coolify_sync.get_deployment_commit(deployment_uuid)
+        if sha:
+            return _short_commit(sha)
+    return None
+
+
+def _format_message(payload: dict[str, Any], commit: str | None = None) -> tuple[str, str]:
+    """Return (title, body) from a Coolify webhook payload.
+
+    ``commit`` is an already-resolved commit/version string (see
+    :func:`_resolve_commit`); when present it is added as a line in the body.
+    """
     logger.debug("payload keys: %s | full: %s", list(payload.keys()), payload)
 
     event_type = payload.get("type", "")
@@ -127,6 +167,8 @@ def _format_message(payload: dict[str, Any]) -> tuple[str, str]:
     display_name = f"{project} — {app_name}" if project else app_name
     title = f"{status_emoji} {display_name}: {status}"
     parts = [f"<b>{display_name}</b>  {status_emoji} <code>{status}</code>"]
+    if commit:
+        parts.append(f"Commit: <code>{commit}</code>")
     if env:
         parts.append(f"Env: {env}")
     if app_url:
@@ -154,8 +196,6 @@ async def receive_webhook(token: str, request: Request, db: Session = Depends(ge
         payload = {}
 
     logger.info("webhook project=%s payload_keys=%s", project.name, list(payload.keys()))
-    title, body = _format_message(payload)
-
     results = await _dispatch(project, payload, db)
     return {"project": project.name, "results": results}
 
@@ -203,7 +243,8 @@ def _dest_target(dest) -> str:
 
 
 async def _dispatch(project: Project, payload: dict, db: Session) -> list[dict]:
-    title, body = _format_message(payload)
+    commit = await _resolve_commit(payload)
+    title, body = _format_message(payload, commit)
     is_err = _is_error(payload)
 
     async def _send_dest(dest) -> dict:
