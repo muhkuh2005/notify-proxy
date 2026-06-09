@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>New Project — notify-proxy</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <nav>
+    <a href="/admin" class="brand">notify-proxy</a>
+    <div class="nav-links">
+      <a href="/admin/bots" class="nav-link">Bots</a>
+      
+      <a href="/admin/settings" class="nav-link">Settings</a>
+      <a href="/admin/users" class="nav-link">Users</a>
+      <a href="/admin/projects/new" class="btn-sm">+ Project</a>
+      
+      
+    </div>
+  </nav>
+  <main>
+    
+
+
+<div class="breadcrumb"><a href="/admin">Projects</a> / New</div>
+<h1>New Project</h1>
+<section class="card">
+  <form method="post" action="/admin/projects/new">
+    <label>Name
+      <input type="text" name="name" required placeholder="my-project" autofocus>
+    </label>
+    <button type="submit" class="btn">Create Project</button>
+  </form>
+</section>
+
+
+  </main>
+</body>
+</html>

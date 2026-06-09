@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bots — notify-proxy</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <nav>
+    <a href="/admin" class="brand">notify-proxy</a>
+    <div class="nav-links">
+      <a href="/admin/bots" class="nav-link">Bots</a>
+      
+      <a href="/admin/settings" class="nav-link">Settings</a>
+      <a href="/admin/users" class="nav-link">Users</a>
+      <a href="/admin/projects/new" class="btn-sm">+ Project</a>
+      
+      
+    </div>
+  </nav>
+  <main>
+    
+<h1>Bots</h1>
+<p class="hint" style="margin-bottom:20px">Bots hold the credentials (token, server URL). Assign a bot to a project destination to send notifications.</p>
+
+<div class="toolbar">
+  <a href="/admin/bots/new" class="btn">+ New Bot</a>
+</div>
+
+
+<table>
+  <thead>
+    <tr><th>Name</th><th>Type</th><th>Visibility</th><th>Used by</th><th></th></tr>
+  </thead>
+  <tbody>
+  
+    <tr>
+      <td><a href="/admin/bots/1">ntfy Bot</a></td>
+      <td><span class="badge ntfy">ntfy</span></td>
+      <td>
+        
+        <form method="post" action="/admin/bots/1/visibility" style="display:inline">
+          <input type="hidden" name="visibility" value="global">
+          <button type="submit" class="badge badge-muted" style="border:none;cursor:pointer" title="Click to toggle">private</button>
+        </form>
+        
+      </td>
+      <td>1 destination(s)</td>
+      <td><a href="/admin/bots/1" class="btn-sm">Edit</a></td>
+    </tr>
+  
+  </tbody>
+</table>
+
+
+  </main>
+</body>
+</html>
