@@ -58,6 +58,12 @@ class TestFormatMessage:
         title, _ = _format_message({"status": "failed", "application_name": "api"})
         assert title.startswith("❌")
 
+    def test_fallback_name_when_no_app_name(self):
+        # Scheduled-task failures carry no application_name — use resolved project.
+        title, _ = _format_message({"status": "failed"}, fallback_name="my-proj")
+        assert "my-proj" in title
+        assert "unknown app" not in title
+
     def test_server_event(self):
         title, body = _format_message(
             {"server_name": "node1", "type": "ServerBackupFinished"}

@@ -116,7 +116,7 @@ async def _resolve_version(payload: dict[str, Any]) -> tuple[str, bool] | None:
     return None
 
 
-def _format_message(payload: dict[str, Any], version: tuple[str, bool] | None = None) -> tuple[str, str]:
+def _format_message(payload: dict[str, Any], version: tuple[str, bool] | None = None, fallback_name: str = "") -> tuple[str, str]:
     """Return (title, body) from a Coolify webhook payload.
 
     ``version`` is an already-resolved ``(text, is_commit)`` pair (see
@@ -158,7 +158,7 @@ def _format_message(payload: dict[str, Any], version: tuple[str, bool] | None = 
     # application_name, project, environment, deployment_url, fqdn.
     # Keep the older guessed keys as fallbacks for other event shapes.
     status = _derive_status(payload, event_type)
-    app_name = payload.get("application_name") or payload.get("name") or "unknown app"
+    app_name = payload.get("application_name") or payload.get("name") or fallback_name or "unknown app"
     app_url = (payload.get("deployment_url") or payload.get("fqdn")
                or payload.get("application_url") or payload.get("url", ""))
     project = payload.get("project") or payload.get("project_name", "")
@@ -257,7 +257,7 @@ def _dest_target(dest) -> str:
 
 async def _dispatch(project: Project, payload: dict, db: Session) -> list[dict]:
     version = await _resolve_version(payload)
-    title, body = _format_message(payload, version)
+    title, body = _format_message(payload, version, fallback_name=project.name)
     is_err = _is_error(payload)
 
     async def _send_dest(dest) -> dict:
