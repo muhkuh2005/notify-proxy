@@ -1,5 +1,5 @@
 import os
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -387,7 +387,7 @@ async def sync_coolify(
 
 
 async def _test_and_redirect(db: Session, dest: Destination, bot_token: str, base_url: str) -> RedirectResponse:
-    ok = await telegram_notifier.send(
+    ok, err = await telegram_notifier.send_detail(
         bot_token, dest.telegram_chat_id,
         "✅ <b>notify-proxy</b> — Destination erfolgreich eingerichtet."
     )
@@ -397,7 +397,9 @@ async def _test_and_redirect(db: Session, dest: Destination, bot_token: str, bas
         return _safe_redirect(f"{base_url}?saved=1")
     bot_info = await telegram_notifier.get_me(bot_token) or {}
     bot_user = bot_info.get("username", "")
-    return _safe_redirect(f"{base_url}?start_bot={bot_user}&dest={dest.id}")
+    return _safe_redirect(
+        f"{base_url}?start_bot={bot_user}&dest={dest.id}&tg_error={quote(err or '')}"
+    )
 
 
 @router.post("/admin/destinations/{dest_id}/test")

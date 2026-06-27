@@ -63,6 +63,15 @@ async def get_updates(bot_token: str) -> list[dict]:
 
 
 async def send(bot_token: str, chat_id: str, text: str) -> bool:
+    ok, _ = await send_detail(bot_token, chat_id, text)
+    return ok
+
+
+async def send_detail(bot_token: str, chat_id: str, text: str) -> tuple[bool, str | None]:
+    """Send a message; return ``(ok, error)``. On failure ``error`` is Telegram's
+    own ``description`` (e.g. "Forbidden: bot was blocked by the user",
+    "Bad Request: chat not found") so callers can show the real cause instead of
+    guessing. ``send`` wraps this for the common bool-only case."""
     url = f"{TELEGRAM_API}/bot{bot_token}/sendMessage"
     try:
         async with httpx.AsyncClient(timeout=10) as client:
@@ -74,8 +83,13 @@ async def send(bot_token: str, chat_id: str, text: str) -> bool:
             })
             if not resp.is_success:
                 logger.error("Telegram error %s: %s", resp.status_code, resp.text)
-                return False
-            return True
+                desc = ""
+                try:
+                    desc = resp.json().get("description", "")
+                except Exception:
+                    pass
+                return False, f"{resp.status_code} {desc or resp.text}".strip()
+            return True, None
     except Exception as exc:
         logger.exception("Telegram send failed: %s", exc)
-        return False
+        return False, str(exc)

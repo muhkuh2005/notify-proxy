@@ -15,8 +15,13 @@
 {% set failed_dest = request.query_params.get("dest") %}
 <div class="flash" style="background:#2a1a10;border:1px solid #f59e0b44;color:var(--warn);border-radius:6px;padding:12px 16px;margin-bottom:16px;font-size:14px;line-height:1.8">
   <strong>Bot konnte keine Nachricht senden.</strong><br>
+  {% set tg_error = request.query_params.get("tg_error") %}
+  {% if tg_error %}
+  Telegram: <code>{{ tg_error }}</code><br>
+  {% endif %}
   {% if bot_user %}
-  Schick <code>/start</code> an <strong>@{{ bot_user }}</strong> damit der Bot dir schreiben darf.<br>
+  Wenn <code>blocked</code> / <code>can't initiate</code>: schick <code>/start</code> an <strong>@{{ bot_user }}</strong> mit dem Konto des Empfängers (nicht irgendeinem).
+  Bei <code>chat not found</code> stimmt die gespeicherte Chat-ID nicht — Destination neu anlegen.<br>
   <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
     <a href="https://t.me/{{ bot_user }}?start=setup" target="_blank" class="btn-sm">
       → /start an @{{ bot_user }} senden
