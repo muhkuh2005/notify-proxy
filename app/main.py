@@ -100,6 +100,8 @@ with engine.connect() as _conn:
         "ALTER TABLE bots ADD COLUMN smtp_use_tls INTEGER NOT NULL DEFAULT 1",
         "ALTER TABLE destinations ADD COLUMN email_to TEXT",
         "ALTER TABLE destinations ADD COLUMN ntfy_priority INTEGER",
+        "ALTER TABLE projects ADD COLUMN event_filter TEXT NOT NULL DEFAULT 'all'",
+        "ALTER TABLE destinations ADD COLUMN event_filter TEXT",
     ]:
         try:
             _conn.execute(text(_stmt))

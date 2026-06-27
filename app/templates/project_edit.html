@@ -50,7 +50,7 @@
   {% if destinations %}
   <table>
     <thead>
-      <tr><th>Bot</th><th>Type</th><th>Target</th><th>Visibility</th><th>Filter</th><th>Enabled</th><th></th></tr>
+      <tr><th>Bot</th><th>Type</th><th>Target</th><th>Visibility</th><th>Filter</th><th>Events</th><th>Enabled</th><th></th></tr>
     </thead>
     <tbody>
     {% for d in destinations %}
@@ -103,6 +103,20 @@
           </form>
           {% else %}
             <span class="hint">{{ d.filter_mode.value if d.filter_mode else 'project default' }}</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if d.editable %}
+          <form method="post" action="/admin/destinations/{{ d.id }}/events" style="display:inline">
+            <select name="event_filter" onchange="this.form.submit()" style="min-width:120px;width:auto;font-size:12px;padding:4px 8px">
+              <option value="inherit" {% if d.event_filter is none %}selected{% endif %}>— (project default)</option>
+              <option value="all" {% if d.event_filter == 'all' %}selected{% endif %}>All events</option>
+              <option value="deployment,server" {% if d.event_filter == 'deployment,server' %}selected{% endif %}>No scheduled tasks</option>
+              <option value="deployment" {% if d.event_filter == 'deployment' %}selected{% endif %}>Deployments only</option>
+            </select>
+          </form>
+          {% else %}
+            <span class="hint">{{ d.event_filter or 'project default' }}</span>
           {% endif %}
         </td>
         <td style="white-space:nowrap">
@@ -224,6 +238,17 @@
         <option value="off" {% if project.filter_mode.value == 'off' %}selected{% endif %}>Off (ignore all)</option>
       </select>
     </label>
+  </form>
+  <form method="post" action="/admin/projects/{{ project.id }}/events" style="flex-direction:row;align-items:center;gap:12px;margin-top:10px">
+    <label style="flex-direction:row;align-items:center;gap:8px;margin:0">
+      <span style="white-space:nowrap;color:var(--text-muted);font-size:13px">Event types:</span>
+      <select name="event_filter" onchange="this.form.submit()" style="min-width:150px;width:auto">
+        <option value="all" {% if project.event_filter == 'all' %}selected{% endif %}>All events</option>
+        <option value="deployment,server" {% if project.event_filter == 'deployment,server' %}selected{% endif %}>No scheduled tasks</option>
+        <option value="deployment" {% if project.event_filter == 'deployment' %}selected{% endif %}>Deployments only</option>
+      </select>
+    </label>
+    <span class="hint" style="font-size:12px">Scheduled-task &amp; server events (backups, patches) count separately from deployments.</span>
   </form>
 </section>
 

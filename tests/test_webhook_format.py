@@ -3,6 +3,7 @@ import asyncio
 
 from app.routes.webhook import (
     _camel_to_words,
+    _classify,
     _extract_commit,
     _format_message,
     _is_error,
@@ -10,6 +11,28 @@ from app.routes.webhook import (
     _short_commit,
     _strip_html,
 )
+
+
+class TestClassify:
+    def test_deployment(self):
+        assert _classify({"event": "deployment_success", "application_uuid": "x"}) == "deployment"
+        assert _classify({"event": "deployment_failed"}) == "deployment"
+        assert _classify({"event": "status_changed"}) == "deployment"
+
+    def test_scheduled_task(self):
+        assert _classify({"event": "task_success", "task_uuid": "t"}) == "scheduled_task"
+        assert _classify({"event": "task_failed"}) == "scheduled_task"
+        assert _classify({"task_name": "nightly"}) == "scheduled_task"  # no event field
+
+    def test_server(self):
+        assert _classify({"event": "backup_failed"}) == "server"
+        assert _classify({"event": "docker_cleanup_success"}) == "server"
+        assert _classify({"event": "high_disk_usage"}) == "server"
+        assert _classify({"server_uuid": "s"}) == "server"  # no event field
+
+    def test_other(self):
+        assert _classify({"status": "finished"}) == "other"
+        assert _classify({}) == "other"
 
 
 class TestIsError:

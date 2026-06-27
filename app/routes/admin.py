@@ -270,6 +270,29 @@ def destination_set_filter(
     return _safe_redirect(f"/admin/projects/{dest.project_id}")
 
 
+# Curated event-category presets. Storage is a general comma-list; the UI only
+# offers the combinations users actually ask for.
+EVENT_FILTER_CHOICES = {"all", "deployment", "deployment,server"}
+
+
+@router.post("/admin/destinations/{dest_id}/events")
+def destination_set_events(
+    dest_id: int,
+    event_filter: str = Form(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+):
+    dest = _dest_for_edit(db, dest_id, user)
+    if event_filter == "inherit":
+        dest.event_filter = None
+    elif event_filter in EVENT_FILTER_CHOICES:
+        dest.event_filter = event_filter
+    else:
+        raise HTTPException(status_code=400, detail="invalid event_filter")
+    db.commit()
+    return _safe_redirect(f"/admin/projects/{dest.project_id}")
+
+
 @router.post("/admin/destinations/{dest_id}/visibility")
 def destination_set_visibility(
     dest_id: int,
@@ -340,6 +363,23 @@ def project_set_filter(
         p.filter_mode = FilterMode(filter_mode)
     except ValueError:
         raise HTTPException(status_code=400, detail="invalid filter_mode")
+    db.commit()
+    return _safe_redirect(f"/admin/projects/{project_id}?saved=1")
+
+
+@router.post("/admin/projects/{project_id}/events")
+def project_set_events(
+    project_id: int,
+    event_filter: str = Form(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_admin),
+):
+    p = db.query(Project).filter(Project.id == project_id).first()
+    if not p:
+        raise HTTPException(status_code=404)
+    if event_filter not in EVENT_FILTER_CHOICES:
+        raise HTTPException(status_code=400, detail="invalid event_filter")
+    p.event_filter = event_filter
     db.commit()
     return _safe_redirect(f"/admin/projects/{project_id}?saved=1")
 

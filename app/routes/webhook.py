@@ -65,6 +65,36 @@ def _is_error(payload: dict[str, Any]) -> bool:
     return any(w in combined for w in _ERROR_WORDS)
 
 
+# Event categories that can be filtered. Anything unclassified ("other") is
+# never dropped — a classifier gap must not silently swallow notifications.
+_FILTERABLE_CATS = {"deployment", "scheduled_task", "server"}
+
+
+def _classify(payload: dict[str, Any]) -> str:
+    """Bucket a Coolify webhook into deployment / scheduled_task / server / other.
+
+    Coolify's discriminator is the top-level ``event`` (deployment_success,
+    task_failed, backup_success, docker_cleanup_*, high_disk_usage, ...). Fall
+    back to entity fields for older/guessed payload shapes that carry no event.
+    """
+    event = str(payload.get("event") or payload.get("type") or "").lower()
+    if event.startswith(("deployment", "status_changed")):
+        return "deployment"
+    if event.startswith("task"):
+        return "scheduled_task"
+    if event.startswith(("backup", "docker_cleanup", "high_disk", "server", "ssl", "traefik")):
+        return "server"
+    # No usable event field: infer from entity keys.
+    if payload.get("task_uuid") or payload.get("task_name"):
+        return "scheduled_task"
+    if (payload.get("server_uuid") or payload.get("server_name")) and not (
+            payload.get("application_uuid") or payload.get("application_name")):
+        return "server"
+    if payload.get("application_uuid") or payload.get("application_name") or event.startswith("deployment"):
+        return "deployment"
+    return "other"
+
+
 def _camel_to_words(s: str) -> str:
     import re
     return re.sub(r"(?<=[a-z])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])", " ", s)
@@ -291,8 +321,14 @@ async def _dispatch(project: Project, payload: dict, db: Session) -> list[dict]:
     version = await _resolve_version(payload)
     title, body = _format_message(payload, version, fallback_name=project.name)
     is_err = _is_error(payload)
+    category = _classify(payload)
 
     async def _send_dest(dest) -> dict:
+        allowed = dest.event_filter if dest.event_filter is not None else (project.event_filter or "all")
+        if allowed != "all" and category in _FILTERABLE_CATS and category not in allowed.split(","):
+            logger.debug("project=%s dest=%s category=%s not in %s — dropped",
+                         project.name, dest.id, category, allowed)
+            return {"dest_id": dest.id, "type": dest.type, "ok": None, "skipped": True}
         effective = dest.filter_mode if dest.filter_mode is not None else project.filter_mode
         if effective == FilterMode.off:
             logger.debug("project=%s dest=%s filter=off — dropped", project.name, dest.id)

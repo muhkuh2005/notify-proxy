@@ -265,3 +265,45 @@ def test_dispatch_transient_error_keeps_dest_enabled(db, monkeypatch):
     _run(p.id, CLEAN, db)
     db.expire_all()
     assert db.get(Destination, d.id).enabled is True  # transient -> stays
+
+
+# ── Event-category filter ───────────────────────────────────────────────────
+DEPLOY = {"event": "deployment_success", "application_uuid": "x"}
+TASK = {"event": "task_success", "task_uuid": "t"}
+BACKUP = {"event": "backup_failed"}
+
+
+def test_event_filter_all_passes_everything(db):
+    p = _project(db, "ef-all"); b = _bot(db, "ef-all-b")  # event_filter defaults 'all'
+    _dest(db, p, b)
+    assert len(_run(p.id, TASK, db)) == 1
+    assert len(_run(p.id, DEPLOY, db)) == 1
+
+
+def test_event_filter_no_scheduled_drops_tasks(db):
+    p = _project(db, "ef-nosched", event_filter="deployment,server"); b = _bot(db, "ef-ns-b")
+    _dest(db, p, b)
+    assert _run(p.id, TASK, db) == []          # scheduled_task dropped
+    assert len(_run(p.id, DEPLOY, db)) == 1     # deployment passes
+    assert len(_run(p.id, BACKUP, db)) == 1     # server passes
+
+
+def test_event_filter_deployments_only(db):
+    p = _project(db, "ef-deponly", event_filter="deployment"); b = _bot(db, "ef-do-b")
+    _dest(db, p, b)
+    assert len(_run(p.id, DEPLOY, db)) == 1
+    assert _run(p.id, TASK, db) == []
+    assert _run(p.id, BACKUP, db) == []
+
+
+def test_event_filter_unknown_category_never_dropped(db):
+    p = _project(db, "ef-unk", event_filter="deployment"); b = _bot(db, "ef-unk-b")
+    _dest(db, p, b)
+    assert len(_run(p.id, {"status": "finished"}, db)) == 1  # 'other' passes fail-open
+
+
+def test_event_filter_dest_override_beats_project(db):
+    p = _project(db, "ef-ov", event_filter="deployment"); b = _bot(db, "ef-ov-b")
+    d = _dest(db, p, b)
+    d.event_filter = "all"; db.commit()
+    assert len(_run(p.id, TASK, db)) == 1  # dest override re-allows tasks

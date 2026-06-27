@@ -117,6 +117,9 @@ class Project(Base):
     is_default: Mapped[bool] = mapped_column(Boolean, default=False)
     filter_mode: Mapped[FilterMode] = mapped_column(Enum(FilterMode), default=FilterMode.all)
     coolify_server_uuid: Mapped[str | None] = mapped_column(String(128), nullable=True, unique=True)
+    # Event-category allowlist: 'all' = every category, else comma-list of
+    # {deployment, scheduled_task, server}. Unknown categories always pass.
+    event_filter: Mapped[str] = mapped_column(String(64), nullable=False, default="all")
 
     destinations: Mapped[list["Destination"]] = relationship(back_populates="project", cascade="all, delete-orphan")
 
@@ -131,6 +134,7 @@ class Destination(Base):
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
 
     filter_mode: Mapped[FilterMode | None] = mapped_column(Enum(FilterMode), nullable=True)  # None = inherit from project
+    event_filter: Mapped[str | None] = mapped_column(String(64), nullable=True)  # None = inherit from project
     last_test_ok: Mapped[bool | None] = mapped_column(Boolean, nullable=True)  # None = never tested
 
     # Per-destination target (credentials live on Bot)
