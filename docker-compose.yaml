@@ -35,6 +35,9 @@ services:
         max-file: "5"
     labels:
       - "traefik.http.services.notify-proxy.loadbalancer.server.port=8000"
+      # Container joins notify_proxy_network too, which the Coolify proxy can't reach.
+      # Without this pin Traefik may route to that dead IP -> Gateway Timeout.
+      - "traefik.docker.network=coolify"
     networks:
       - default
       - coolify
