@@ -387,6 +387,18 @@ async def sync_coolify(
 
 
 async def _test_and_redirect(db: Session, dest: Destination, bot_token: str, base_url: str) -> RedirectResponse:
+    # Private-user @usernames can't be resolved at create time until the user has
+    # messaged the bot. Re-resolve now so a stale "@name" self-heals on retest.
+    handle = dest.telegram_chat_label or (
+        dest.telegram_chat_id if (dest.telegram_chat_id or "").startswith("@") else None
+    )
+    if handle and handle.startswith("@"):
+        resolved = await telegram_notifier.resolve_chat_id(bot_token, handle)
+        if resolved:
+            dest.telegram_chat_id = resolved
+            dest.telegram_chat_label = handle
+            db.commit()
+
     ok, err = await telegram_notifier.send_detail(
         bot_token, dest.telegram_chat_id,
         "✅ <b>notify-proxy</b> — Destination erfolgreich eingerichtet."

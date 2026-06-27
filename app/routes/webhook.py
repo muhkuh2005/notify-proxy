@@ -232,9 +232,39 @@ def _to_markdown(text: str) -> str:
 _RETRY_ATTEMPTS = max(1, int(os.environ.get("NOTIFY_RETRY_ATTEMPTS", "3")))
 
 
+class PermanentSendError(Exception):
+    """A send failed for a reason that retrying can never fix (bad chat id,
+    blocked bot). Raised by a factory to stop retries and disable the dest."""
+
+
+# Telegram errors that mean the destination is dead, not flaky.
+_TG_PERMANENT = (
+    "chat not found", "bot was blocked", "user is deactivated",
+    "can't initiate conversation", "chat_id is empty", "peer_id_invalid",
+    "group chat was upgraded",
+)
+
+
+def _tg_permanent(err: str | None) -> bool:
+    e = (err or "").lower()
+    return any(p in e for p in _TG_PERMANENT)
+
+
+def _telegram_factory(bot_token: str, chat_id: str, body: str):
+    """Send factory that raises PermanentSendError on a dead-destination error
+    so the dispatcher disables the dest instead of retrying it every webhook."""
+    async def _send() -> bool:
+        ok, err = await telegram.send_detail(bot_token, chat_id, body)
+        if not ok and _tg_permanent(err):
+            raise PermanentSendError(err or "telegram permanent error")
+        return ok
+    return _send
+
+
 async def _retry_send(label: str, factory) -> bool:
     """Call an async send factory up to _RETRY_ATTEMPTS times with exponential
-    backoff. On exhaustion, log an ERROR so dropped notifications are findable."""
+    backoff. On exhaustion, log an ERROR so dropped notifications are findable.
+    PermanentSendError is never retried — it propagates to the caller."""
     for attempt in range(1, _RETRY_ATTEMPTS + 1):
         try:
             if await factory():
@@ -242,6 +272,8 @@ async def _retry_send(label: str, factory) -> bool:
                     logger.info("notify recovered on attempt %d/%d: %s", attempt, _RETRY_ATTEMPTS, label)
                 return True
             logger.warning("notify attempt %d/%d failed: %s", attempt, _RETRY_ATTEMPTS, label)
+        except PermanentSendError:
+            raise
         except Exception as exc:
             logger.warning("notify attempt %d/%d errored (%s): %s", attempt, _RETRY_ATTEMPTS, exc, label)
         if attempt < _RETRY_ATTEMPTS:
@@ -273,7 +305,7 @@ async def _dispatch(project: Project, payload: dict, db: Session) -> list[dict]:
 
         if bot and dest.type == DestinationType.telegram:
             if bot.telegram_bot_token and dest.telegram_chat_id:
-                factory = lambda: telegram.send(bot.telegram_bot_token, dest.telegram_chat_id, body)
+                factory = _telegram_factory(bot.telegram_bot_token, dest.telegram_chat_id, body)
         elif bot and dest.type == DestinationType.ntfy:
             if bot.ntfy_url and dest.ntfy_topic:
                 prio = dest.ntfy_priority or (4 if is_err else 3)
@@ -304,7 +336,7 @@ async def _dispatch(project: Project, payload: dict, db: Session) -> list[dict]:
                 )
         # Legacy fallback: inline credentials on destination
         elif dest.type == DestinationType.telegram and dest.telegram_bot_token and dest.telegram_chat_id:
-            factory = lambda: telegram.send(dest.telegram_bot_token, dest.telegram_chat_id, body)
+            factory = _telegram_factory(dest.telegram_bot_token, dest.telegram_chat_id, body)
         elif dest.type == DestinationType.ntfy and dest.ntfy_url and dest.ntfy_topic:
             factory = lambda: ntfy.send(dest.ntfy_url, dest.ntfy_topic, title, _strip_html(body), dest.ntfy_token)
 
@@ -314,12 +346,25 @@ async def _dispatch(project: Project, payload: dict, db: Session) -> list[dict]:
             return {"dest_id": dest.id, "type": dest.type, "ok": False}
 
         label = f"project={project.name} dest={dest.id} type={dest.type} target={_dest_target(dest)}"
-        ok = await _retry_send(label, factory)
+        try:
+            ok = await _retry_send(label, factory)
+        except PermanentSendError as exc:
+            logger.error("project=%s dest=%s permanently undeliverable (%s) — disabling",
+                         project.name, dest.id, exc)
+            return {"dest_id": dest.id, "type": dest.type, "ok": False, "disable": True}
         return {"dest_id": dest.id, "type": dest.type, "ok": ok}
 
     active = [dest for dest in project.destinations if dest.enabled]
     all_results = await asyncio.gather(*[_send_dest(d) for d in active], return_exceptions=True)
-    return [r for r in all_results if isinstance(r, dict) and not r.get("skipped")]
+    results = [r for r in all_results if isinstance(r, dict)]
+
+    dead = [r["dest_id"] for r in results if r.get("disable")]
+    if dead:
+        db.query(Destination).filter(Destination.id.in_(dead)).update(
+            {Destination.enabled: False}, synchronize_session=False)
+        db.commit()
+
+    return [r for r in results if not r.get("skipped")]
 
 
 @router.post("/webhook/coolify/{token}")

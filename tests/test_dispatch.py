@@ -221,3 +221,47 @@ def test_coolify_no_match_no_default_dropped(db):
     db.query(Project).update({Project.is_default: False}); db.commit()
     body = _post_coolify({"application_uuid": "NOPE-2", "status": "finished"}).json()
     assert body["routed"] is False
+
+
+# ── Permanent-failure circuit breaker ───────────────────────────────────────
+def test_tg_permanent_classifier():
+    assert webhook._tg_permanent("400 Bad Request: chat not found")
+    assert webhook._tg_permanent("403 Forbidden: bot was blocked by the user")
+    assert not webhook._tg_permanent("429 Too Many Requests")
+    assert not webhook._tg_permanent(None)
+
+
+def test_dispatch_disables_dest_on_permanent_error(db, monkeypatch):
+    async def dead(*a, **k):
+        return False, "400 Bad Request: chat not found"
+    monkeypatch.setattr("app.notifiers.telegram.send_detail", dead)
+
+    p = _project(db, "d-perm")
+    b = Bot(name="d-perm-b", type=DestinationType.telegram, telegram_bot_token="t")
+    db.add(b); db.commit(); db.refresh(b)
+    d = Destination(project_id=p.id, bot_id=b.id, type=DestinationType.telegram,
+                    telegram_chat_id="123", enabled=True)
+    db.add(d); db.commit(); db.refresh(d)
+
+    res = _run(p.id, CLEAN, db)
+    assert res and res[0]["disable"] is True
+    db.expire_all()
+    assert db.get(Destination, d.id).enabled is False  # no longer retried
+
+
+def test_dispatch_transient_error_keeps_dest_enabled(db, monkeypatch):
+    async def flaky(*a, **k):
+        return False, "429 Too Many Requests"
+    monkeypatch.setattr("app.notifiers.telegram.send_detail", flaky)
+    monkeypatch.setattr(webhook, "_RETRY_ATTEMPTS", 1)
+
+    p = _project(db, "d-trans")
+    b = Bot(name="d-trans-b", type=DestinationType.telegram, telegram_bot_token="t")
+    db.add(b); db.commit(); db.refresh(b)
+    d = Destination(project_id=p.id, bot_id=b.id, type=DestinationType.telegram,
+                    telegram_chat_id="123", enabled=True)
+    db.add(d); db.commit(); db.refresh(d)
+
+    _run(p.id, CLEAN, db)
+    db.expire_all()
+    assert db.get(Destination, d.id).enabled is True  # transient -> stays

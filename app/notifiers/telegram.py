@@ -11,7 +11,11 @@ _getme_cache: dict[str, tuple[dict, float]] = {}  # token -> (result, expires_mo
 
 
 async def resolve_chat_id(bot_token: str, username: str) -> str | None:
-    """Resolve @username or chat name to numeric chat ID via getChat."""
+    """Resolve @username (or chat name) to a numeric chat ID.
+
+    getChat resolves public channels/groups/bots. It does NOT resolve a private
+    user's @username — Telegram only exposes that once the user has messaged the
+    bot, so fall back to scanning getUpdates for a matching ``chat.username``."""
     url = f"{TELEGRAM_API}/bot{bot_token}/getChat"
     try:
         async with httpx.AsyncClient(timeout=10) as client:
@@ -20,9 +24,18 @@ async def resolve_chat_id(bot_token: str, username: str) -> str | None:
                 data = resp.json()
                 if data.get("ok"):
                     return str(data["result"]["id"])
-            logger.warning("getChat failed for %s: %s %s", username, resp.status_code, resp.text)
+            logger.warning("getChat failed for %s: %s %s — trying getUpdates", username, resp.status_code, resp.text)
     except Exception as exc:
         logger.exception("resolve_chat_id failed: %s", exc)
+
+    handle = username.lstrip("@").lower()
+    if not handle:
+        return None
+    for upd in await get_updates(bot_token):
+        chat = (upd.get("message") or upd.get("edited_message") or {}).get("chat", {})
+        if str(chat.get("username", "")).lower() == handle and chat.get("id"):
+            logger.info("resolved %s via getUpdates -> %s", username, chat["id"])
+            return str(chat["id"])
     return None
 
 
