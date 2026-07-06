@@ -10,7 +10,7 @@
 <div class="flash ok">Saved.</div>
 {% endif %}
 
-{% if request.query_params.get("start_bot") %}
+{% if request.query_params.get("start_bot") or request.query_params.get("tg_error") %}
 {% set bot_user = request.query_params.get("start_bot") %}
 {% set failed_dest = request.query_params.get("dest") %}
 <div class="flash" style="background:#2a1a10;border:1px solid #f59e0b44;color:var(--warn);border-radius:6px;padding:12px 16px;margin-bottom:16px;font-size:14px;line-height:1.8">
