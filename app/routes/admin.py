@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from ..auth import can_edit, can_view, require_admin, require_user
 from ..database import get_db
-from ..models import Bot, Destination, DestinationType, FilterMode, Project, User, new_project_token
+from ..models import AuditLog, Bot, Destination, DestinationType, FilterMode, Project, User, new_project_token
 from ..notifiers import discord, mattermost, slack
 from ..notifiers import email as email_notifier
 from ..notifiers import telegram as telegram_notifier
@@ -117,11 +117,21 @@ def project_edit(
     dests = [d for d in p.destinations if can_view(user, d.owner_id, d.visibility)]
     for d in dests:
         d.editable = can_edit(user, d.owner_id)
+    audit = []
+    if user.is_admin:
+        audit = (
+            db.query(AuditLog)
+            .filter(AuditLog.project_id == p.id)
+            .order_by(AuditLog.created_at.desc())
+            .limit(10)
+            .all()
+        )
     return templates.TemplateResponse(request, "project_edit.html", {
         "project": p,
         "destinations": dests,
         "bots": _visible_bots(db, user),
         "saved": saved,
+        "audit": audit,
         "user": user,
     })
 
@@ -364,6 +374,12 @@ def project_regenerate_token(
     if not p:
         raise HTTPException(status_code=404)
     p.token = new_project_token()
+    db.add(AuditLog(
+        actor=user.display,
+        action="project.token_regenerated",
+        project_id=p.id,
+        project_name=p.name,
+    ))
     db.commit()
     return _safe_redirect(f"/admin/projects/{project_id}?saved=1")
 

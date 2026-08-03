@@ -46,6 +46,20 @@
         onsubmit="return confirm('Generate a new token for {{ project.name }}? The current webhook URL stops working immediately and every sender has to be updated.')">
     <button type="submit" class="btn-sm">↻ Regenerate token</button>
   </form>
+  {% if audit %}
+  <table style="margin-top:16px">
+    <thead><tr><th>When</th><th>Who</th><th>Action</th></tr></thead>
+    <tbody>
+    {% for a in audit %}
+      <tr>
+        <td class="text-muted">{{ a.created_at.strftime("%Y-%m-%d %H:%M UTC") }}</td>
+        <td>{{ a.actor }}</td>
+        <td><code>{{ a.action }}</code></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
 </section>
 {% endif %}
 

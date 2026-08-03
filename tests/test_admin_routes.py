@@ -14,7 +14,7 @@ import pytest
 
 from app.database import SessionLocal, get_db
 from app.main import app
-from app.models import Bot, Destination, DestinationType, FilterMode, Project, Setting
+from app.models import AuditLog, Bot, Destination, DestinationType, FilterMode, Project, Setting
 
 AUTH = ("admin", "test-password")
 
@@ -229,6 +229,18 @@ def test_project_regenerate_token(client, db):
     # old URL is dead, new one works
     assert client.post(f"/webhook/{old}", json={}).status_code == 404
     assert client.post(f"/webhook/{p.token}", json={}).status_code != 404
+
+    entry = db.query(AuditLog).filter(AuditLog.project_id == p.id).one()
+    assert entry.action == "project.token_regenerated"
+    assert entry.actor  # who did it
+    assert entry.project_name == "rotate-me"
+    # the log records the fact, never the secret
+    assert old not in repr(entry.__dict__)
+    assert p.token not in repr(entry.__dict__)
+
+    # and it shows up on the project page
+    page = client.get(f"/admin/projects/{p.id}", auth=AUTH).text
+    assert "project.token_regenerated" in page
 
 
 def test_project_regenerate_token_missing_404(client, db):
