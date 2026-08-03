@@ -129,6 +129,23 @@ class Project(Base):
     destinations: Mapped[list["Destination"]] = relationship(back_populates="project", cascade="all, delete-orphan")
 
 
+class AuditLog(Base):
+    """Who did what, to which project. Never stores secrets — only the fact.
+
+    Actor and project name are denormalised strings on purpose: the log has to
+    stay readable after the user or the project it refers to is deleted, so
+    neither column is a foreign key.
+    """
+    __tablename__ = "audit_log"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc)
+    actor: Mapped[str] = mapped_column(String(255), nullable=False)
+    action: Mapped[str] = mapped_column(String(64), nullable=False)
+    project_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    project_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
+
+
 class Destination(Base):
     __tablename__ = "destinations"
 
