@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from ..auth import can_edit, can_view, require_admin, require_user
 from ..database import get_db
-from ..models import Bot, Destination, DestinationType, FilterMode, Project, User
+from ..models import Bot, Destination, DestinationType, FilterMode, Project, User, new_project_token
 from ..notifiers import discord, mattermost, slack
 from ..notifiers import email as email_notifier
 from ..notifiers import telegram as telegram_notifier
@@ -347,6 +347,25 @@ def project_delete(
     db.delete(p)
     db.commit()
     return _safe_redirect("/admin")
+
+
+@router.post("/admin/projects/{project_id}/regenerate-token")
+def project_regenerate_token(
+    project_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_admin),
+):
+    """Rotate the project's webhook token — use when the URL leaked.
+
+    The old URL stops working immediately (tokens are looked up per request),
+    so every sender of this webhook has to be updated.
+    """
+    p = db.query(Project).filter(Project.id == project_id).first()
+    if not p:
+        raise HTTPException(status_code=404)
+    p.token = new_project_token()
+    db.commit()
+    return _safe_redirect(f"/admin/projects/{project_id}?saved=1")
 
 
 @router.post("/admin/projects/{project_id}/filter")

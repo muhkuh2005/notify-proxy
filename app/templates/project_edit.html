@@ -42,6 +42,10 @@
   <p>Per-project direct webhook (alternative to the global Coolify router):</p>
   <code class="block">{{ request.base_url }}webhook/{{ project.token }}</code>
   <p class="hint">Keep this secret.</p>
+  <form method="post" action="/admin/projects/{{ project.id }}/regenerate-token"
+        onsubmit="return confirm('Generate a new token for {{ project.name }}? The current webhook URL stops working immediately and every sender has to be updated.')">
+    <button type="submit" class="btn-sm">↻ Regenerate token</button>
+  </form>
 </section>
 {% endif %}
 
