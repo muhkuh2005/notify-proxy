@@ -10,6 +10,11 @@ from .database import Base
 from .util import now_utc
 
 
+def new_project_token() -> str:
+    """Webhook token for a project — also used when rotating a leaked one."""
+    return secrets.token_urlsafe(32)
+
+
 class DestinationType(str, PyEnum):
     telegram = "telegram"
     ntfy = "ntfy"
@@ -110,7 +115,7 @@ class Project(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
-    token: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, default=lambda: secrets.token_urlsafe(32))
+    token: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, default=lambda: new_project_token())
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc)
     coolify_uuid: Mapped[str | None] = mapped_column(String(128), nullable=True, unique=True)
     coolify_project_name: Mapped[str | None] = mapped_column(String(256), nullable=True)

@@ -215,6 +215,29 @@ def test_project_set_default_missing_404(client, db):
     assert r.status_code == 404
 
 
+# ── Projects: regenerate-token ──────────────────────────────────────────────
+def test_project_regenerate_token(client, db):
+    p = _project(db, "rotate-me")
+    old = p.token
+    r = client.post(
+        f"/admin/projects/{p.id}/regenerate-token", auth=AUTH, follow_redirects=False
+    )
+    assert r.status_code == 303
+    db.refresh(p)
+    assert p.token != old
+    assert p.token
+    # old URL is dead, new one works
+    assert client.post(f"/webhook/{old}", json={}).status_code == 404
+    assert client.post(f"/webhook/{p.token}", json={}).status_code != 404
+
+
+def test_project_regenerate_token_missing_404(client, db):
+    r = client.post(
+        "/admin/projects/999999/regenerate-token", auth=AUTH, follow_redirects=False
+    )
+    assert r.status_code == 404
+
+
 # ── Projects: delete ────────────────────────────────────────────────────────
 def test_project_delete(client, db):
     p = _project(db, "del-proj")
