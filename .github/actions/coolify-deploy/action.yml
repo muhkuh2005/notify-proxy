@@ -98,7 +98,9 @@ runs:
         fi
 
         echo "🚀 Triggering $LABEL deployment: $CLEAN_URL"
-        RESP=$(curl -sS -L -X GET "$CLEAN_URL" \
+        # Coolify 4.2.0 rejects GET on /api/v1/deploy with 405; --post30x keeps
+        # the method across redirects, which -L would otherwise downgrade to GET.
+        RESP=$(curl -sS -L --post301 --post302 -X POST "$CLEAN_URL" \
           -H "Authorization: Bearer $COOLIFY_TOKEN" \
           -H "Accept: application/json")
         echo "   trigger response: $RESP"
