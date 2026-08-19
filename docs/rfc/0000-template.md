@@ -73,6 +73,13 @@ before the implementation.
 1. **Given** … **when** … **then** … → `test_...`
 2. …
 
+Checklist for the PR that implements this RFC:
+
+- [ ] Acceptance criteria above are covered by tests
+- [ ] Visual change (UI, layout, styling, charts, generated images/PDFs) → before/after
+      screenshots embedded in the PR body, same viewport, zoom and theme in both.
+      Delete this line if the change has no visual surface.
+
 ## 7. Test plan
 
 Which levels (unit / integration / e2e), what is deliberately not tested and why,
