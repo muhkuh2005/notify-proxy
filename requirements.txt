@@ -6,4 +6,4 @@ httpx==0.28.1
 python-multipart==0.0.31
 authlib==1.7.2
 itsdangerous==2.2.0
-cryptography==48.0.1
+cryptography==50.0.0
